@@ -1,6 +1,6 @@
 // Updated orders.js (with stock update and other post-payment logic in both webhook and verify-payment)
 import express from 'express';
-import pool from '../config/db.js';
+import sql from '../config/db.js';
 import nodemailer from 'nodemailer';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
@@ -119,14 +119,13 @@ async function createIThinkOrder(order, user, product, address) {
       const awbNumber = responseData.awb || responseData.shipment_id || responseData.tracking_number;
       
       if (awbNumber) {
-        await pool.query(
-          `UPDATE orders 
-           SET shiprocket_order_id = $1, 
-               awb = $2,
-               tracking_status = $3 
-           WHERE id = $4`,
-          [awbNumber, awbNumber, 'ORDER_CONFIRMED', order.id]
-        );
+        await sql`
+          UPDATE orders 
+          SET shiprocket_order_id = ${awbNumber}, 
+              awb = ${awbNumber},
+              tracking_status = ${'ORDER_CONFIRMED'} 
+          WHERE id = ${order.id}
+        `;
       }
 
       return responseData;
@@ -170,27 +169,29 @@ async function trackIThinkOrder(awbNumber) {
 async function handlePaymentSuccess(orderId) {
   try {
     // Fetch order, user, product, address
-    const orderRes = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
-    const order = orderRes.rows[0];
+    const orderRes = await sql`SELECT * FROM orders WHERE id = ${orderId}`;
+    const order = orderRes[0];
     if (!order) return { success: false, error: 'Order not found' };
 
-    const userRes = await pool.query('SELECT * FROM users WHERE id = $1', [order.user_id]);
-    const productRes = await pool.query('SELECT * FROM products WHERE id = $1', [order.product_id]);
-    const addressRes = await pool.query('SELECT * FROM addresses WHERE id = $1', [order.address_id]);
+    const userRes = await sql`SELECT * FROM users WHERE id = ${order.user_id}`;
+    const productRes = await sql`SELECT * FROM products WHERE id = ${order.product_id}`;
+    const addressRes = await sql`SELECT * FROM addresses WHERE id = ${order.address_id}`;
 
-    const user = userRes.rows[0];
-    const product = productRes.rows[0];
-    const address = addressRes.rows[0];
+    const user = userRes[0];
+    const product = productRes[0];
+    const address = addressRes[0];
 
     if (!user || !product || !address) return { success: false, error: 'Missing related data' };
 
     // 1️⃣ Reduce stock quantity (atomic decrement to prevent race conditions)
-    const stockUpdateRes = await pool.query(
-      'UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1 RETURNING stock',
-      [order.quantity, order.product_id]
-    );
+    const stockUpdateRes = await sql`
+      UPDATE products
+      SET stock = stock - ${order.quantity}
+      WHERE id = ${order.product_id} AND stock >= ${order.quantity}
+      RETURNING stock
+    `;
 
-    if (stockUpdateRes.rowCount === 0) {
+    if (stockUpdateRes.length === 0) {
       return { success: false, error: 'Insufficient stock or update failed' };
     }
 
@@ -332,19 +333,19 @@ router.post('/create-session', async (req, res) => {
     const orderId = uuidv4();
 
     // Fetch user, product, address
-    const userRes = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
-    const productRes = await pool.query('SELECT * FROM products WHERE id = $1', [productId]);
-    const addressRes = await pool.query(
-      'SELECT * FROM addresses WHERE id = $1 AND user_id = $2',
-      [addressId, userId]
-    );
+    const userRes = await sql`SELECT * FROM users WHERE id = ${userId}`;
+    const productRes = await sql`SELECT * FROM products WHERE id = ${productId}`;
+    const addressRes = await sql`
+      SELECT * FROM addresses
+      WHERE id = ${addressId} AND user_id = ${userId}
+    `;
 
-    if (!userRes.rows[0] || !productRes.rows[0] || !addressRes.rows[0]) {
+    if (!userRes[0] || !productRes[0] || !addressRes[0]) {
       return res.status(404).json({ error: 'Invalid user, product, or address' });
     }
 
-    const user = userRes.rows[0];
-    const product = productRes.rows[0];
+    const user = userRes[0];
+    const product = productRes[0];
 
     // Check stock availability
     if (product.stock < quantity) {
@@ -392,24 +393,23 @@ router.post('/create-session', async (req, res) => {
       return res.status(500).json({ error: 'No payment session returned' });
     }
 
-    await pool.query(`
-  INSERT INTO orders (
-    id, user_id, product_id, address_id, quantity, total_price, status,
-    color, size
-  ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
-  ) RETURNING id
-`, [
-  orderId,
-  userId,
-  productId,
-  addressId,
-  quantity,
-  total_price,
-  'PENDING',
-  color || null,     // ← important: allow NULL
-  size || null
-]);
+    await sql`
+      INSERT INTO orders (
+        id, user_id, product_id, address_id, quantity, total_price, status,
+        color, size
+      ) VALUES (
+        ${orderId},
+        ${userId},
+        ${productId},
+        ${addressId},
+        ${quantity},
+        ${total_price},
+        ${'PENDING'},
+        ${color || null},
+        ${size || null}
+      )
+      RETURNING id
+    `;
 
     res.json({ sessionId: data.payment_session_id, orderId });
 
@@ -469,19 +469,18 @@ router.post('/cashfree-webhook', async (req, res) => {
     }
 
     // Check if the order already has a PAID status
-    const existingOrderRes = await pool.query(
-      'SELECT status FROM orders WHERE id = $1',
-      [webhookOrderId]
-    );
+    const existingOrderRes = await sql`
+      SELECT status FROM orders WHERE id = ${webhookOrderId}
+    `;
 
-    console.log("🔍 Existing Order Query Result:", existingOrderRes.rows);
+    console.log("🔍 Existing Order Query Result:", existingOrderRes);
 
-    if (existingOrderRes.rows.length === 0) {
+    if (existingOrderRes.length === 0) {
       console.warn("❌ Order not found:", webhookOrderId);
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const existingStatus = existingOrderRes.rows[0].status;
+    const existingStatus = existingOrderRes[0].status;
     console.log("🔍 Existing Order Status:", existingStatus);
 
     if ((existingStatus || '').toUpperCase() === 'PAID') {
@@ -490,14 +489,16 @@ router.post('/cashfree-webhook', async (req, res) => {
     }
 
     // Update order status
-    const orderRes = await pool.query(
-      'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
-      ['PAID', webhookOrderId]
-    );
+    const orderRes = await sql`
+      UPDATE orders
+      SET status = ${'PAID'}
+      WHERE id = ${webhookOrderId}
+      RETURNING *
+    `;
 
-    console.log("✅ Order Update Query Result:", orderRes.rows);
+    console.log("✅ Order Update Query Result:", orderRes);
 
-    const order = orderRes.rows[0];
+    const order = orderRes[0];
     if (!order) {
       console.error("❌ Failed to update order status:", webhookOrderId);
       return res.status(500).json({ error: 'Failed to update order status' });
@@ -551,12 +552,14 @@ router.get('/verify-payment/:orderId', async (req, res) => {
     }
 
     // Update status if not already PAID
-    const updateRes = await pool.query(
-      'UPDATE orders SET status = $1 WHERE id = $2 AND status <> $1 RETURNING *',
-      ['PAID', orderId]
-    );
+    const updateRes = await sql`
+      UPDATE orders
+      SET status = ${'PAID'}
+      WHERE id = ${orderId} AND status <> ${'PAID'}
+      RETURNING *
+    `;
 
-    if (updateRes.rowCount > 0) {
+    if (updateRes.length > 0) {
       console.log("✅ Order status updated to PAID via fallback for order_id:", orderId);
       
       // Handle post-payment logic (stock, shipping, emails) only if status was updated
@@ -586,23 +589,22 @@ router.get('/track/:orderId', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const orderRes = await pool.query(
-      `SELECT o.*, u.name as user_name, u.email, u.phone,
-              p.name as product_name, p.price as unit_price, p.image_urls,
-              a.address1, a.address2, a.landmark, a.city, a.state, a.pincode
-       FROM orders o
-       JOIN users u ON o.user_id = u.id
-       JOIN products p ON o.product_id = p.id
-       JOIN addresses a ON o.address_id = a.id
-       WHERE o.id = $1`,
-      [orderId]
-    );
+    const orderRes = await sql`
+      SELECT o.*, u.name as user_name, u.email, u.phone,
+             p.name as product_name, p.price as unit_price, p.image_urls,
+             a.address1, a.address2, a.landmark, a.city, a.state, a.pincode
+      FROM orders o
+      JOIN users u ON o.user_id = u.id
+      JOIN products p ON o.product_id = p.id
+      JOIN addresses a ON o.address_id = a.id
+      WHERE o.id = ${orderId}
+    `;
 
-    if (orderRes.rows.length === 0) {
+    if (orderRes.length === 0) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const order = orderRes.rows[0];
+    const order = orderRes[0];
 
     // Get tracking info from iThink if AWB exists
     let trackingInfo = null;
@@ -632,18 +634,17 @@ router.get('/user/me', async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userId = decoded.id;  // this is the real UUID
 
-    const orders = await pool.query(
-      `SELECT o.*, p.name as product_name, p.image_urls,
-              a.city, a.state
-       FROM orders o
-       JOIN products p ON o.product_id = p.id
-       JOIN addresses a ON o.address_id = a.id
-       WHERE o.user_id = $1
-       ORDER BY o.created_at DESC`,
-      [userId]
-    );
+    const orders = await sql`
+      SELECT o.*, p.name as product_name, p.image_urls,
+             a.city, a.state
+      FROM orders o
+      JOIN products p ON o.product_id = p.id
+      JOIN addresses a ON o.address_id = a.id
+      WHERE o.user_id = ${userId}
+      ORDER BY o.created_at DESC
+    `;
 
-    res.json(orders.rows);
+    res.json(orders);
   } catch (err) {
     console.error('Get user orders error:', err);
     if (err.name === 'JsonWebTokenError') {
@@ -661,7 +662,7 @@ router.get('/all', async (req, res) => {
     // TODO: Add proper admin middleware check in production
     // For now: anyone with valid token can access (demo only)
 
-    const result = await pool.query(`
+    const result = await sql`
       SELECT 
         o.id, o.user_id, o.product_id, o.quantity, o.total_price,
         o.status, o.created_at, o.awb, o.color, o.size,
@@ -671,9 +672,9 @@ router.get('/all', async (req, res) => {
       JOIN products p ON o.product_id = p.id
       JOIN users u ON o.user_id = u.id
       ORDER BY o.created_at DESC
-    `);
+    `;
 
-    res.json(result.rows);
+    res.json(result);
   } catch (err) {
     console.error('Get all orders error:', err);
     res.status(500).json({ error: 'Server error' });
