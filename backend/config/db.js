@@ -21,3 +21,4 @@ const db = new Pool({
     password: 'jayanthK@2006',
     port: 5432,
 });
+*/
