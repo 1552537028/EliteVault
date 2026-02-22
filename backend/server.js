@@ -21,7 +21,7 @@ app.use(bodyParser.json({
 }));
 // Enable CORS for your frontend
 app.use(cors({
-  origin: 'http://localhost:5173', // change if your frontend port differs
+  origin: 'https://elite-vault.onrender.com/', // change if your frontend port differs
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
