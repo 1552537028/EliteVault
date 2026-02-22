@@ -20,12 +20,20 @@ app.use(bodyParser.json({
   }
 }));
 // Enable CORS for your frontend
-app.use(cors({
-  origin: 'https://elite-vault.onrender.com/', // change if your frontend port differs
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+const allowedOrigins = ['https://elite-vault.onrender.com'];
 
+app.use(cors({
+  origin: function(origin, callback){
+    if(!origin) return callback(null, true); // allow non-browser requests
+    if(allowedOrigins.indexOf(origin) === -1){
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  methods: ['GET','POST','PUT','DELETE'],
+  allowedHeaders: ['Content-Type','Authorization'],
+}));
 app.use(express.json());
 
 // Create uploads directory if it doesn't exist
