@@ -1,5 +1,5 @@
 import express from 'express';
-import pool from '../config/db.js';
+import sql from '../config/db.js';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 
@@ -33,7 +33,7 @@ router.get('/:productId', async (req, res) => {
   const { productId } = req.params;
 
   try {
-    const result = await pool.query(`
+    const result = await sql`
       SELECT 
         r.id,
         r.rating,
@@ -42,11 +42,11 @@ router.get('/:productId', async (req, res) => {
         u.name AS user_name
       FROM reviews r
       JOIN users u ON r.user_id = u.id
-      WHERE r.product_id = $1
+      WHERE r.product_id = ${productId}
       ORDER BY r.created_at DESC
-    `, [productId]);
+    `;
 
-    res.json(result.rows);
+    res.json(result);
   } catch (err) {
     console.error('Error fetching reviews:', err);
     res.status(500).json({ error: 'Failed to fetch reviews' });
@@ -71,46 +71,45 @@ router.post('/', authenticateToken, async (req, res) => {
 
   try {
     // Check if user already reviewed this product
-    const existing = await pool.query(
-      'SELECT id FROM reviews WHERE product_id = $1 AND user_id = $2',
-      [productId, userId]
-    );
+    const existing = await sql`
+      SELECT id FROM reviews
+      WHERE product_id = ${productId} AND user_id = ${userId}
+    `;
 
-    if (existing.rows.length > 0) {
+    if (existing.length > 0) {
       return res.status(403).json({ error: 'You have already reviewed this product' });
     }
 
     // Insert new review
-    const result = await pool.query(
-      `INSERT INTO reviews (product_id, user_id, rating, comment)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, rating, comment, created_at`,
-      [productId, userId, rating, comment.trim()]
-    );
+    const result = await sql`
+      INSERT INTO reviews (product_id, user_id, rating, comment)
+      VALUES (${productId}, ${userId}, ${rating}, ${comment.trim()})
+      RETURNING id, rating, comment, created_at
+    `;
 
     // Optional: update product's avg_rating and review_count
-    await pool.query(`
+    await sql`
       UPDATE products
       SET 
         avg_rating = (
           SELECT ROUND(AVG(rating)::numeric, 1)
           FROM reviews
-          WHERE product_id = $1
+          WHERE product_id = ${productId}
         ),
         review_count = (
           SELECT COUNT(*)
           FROM reviews
-          WHERE product_id = $1
+          WHERE product_id = ${productId}
         )
-      WHERE id = $1
-    `, [productId]);
+      WHERE id = ${productId}
+    `;
 
     // Fetch user name for response
-    const userRes = await pool.query('SELECT name FROM users WHERE id = $1', [userId]);
-    const userName = userRes.rows[0]?.name || 'Anonymous';
+    const userRes = await sql`SELECT name FROM users WHERE id = ${userId}`;
+    const userName = userRes[0]?.name || 'Anonymous';
 
     const newReview = {
-      ...result.rows[0],
+      ...result[0],
       user_name: userName
     };
 
@@ -133,12 +132,12 @@ router.get('/user-has-reviewed/:productId', authenticateToken, async (req, res) 
   const userId = req.user.id;
 
   try {
-    const result = await pool.query(
-      'SELECT id FROM reviews WHERE product_id = $1 AND user_id = $2',
-      [productId, userId]
-    );
+    const result = await sql`
+      SELECT id FROM reviews
+      WHERE product_id = ${productId} AND user_id = ${userId}
+    `;
 
-    res.json({ hasReviewed: result.rows.length > 0 });
+    res.json({ hasReviewed: result.length > 0 });
   } catch (err) {
     console.error('Error checking review status:', err);
     res.status(500).json({ error: 'Server error' });
@@ -154,38 +153,38 @@ router.delete('/:reviewId', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const result = await pool.query(
-      'DELETE FROM reviews WHERE id = $1 AND user_id = $2 RETURNING id',
-      [reviewId, userId]
-    );
+    const result = await sql`
+      DELETE FROM reviews
+      WHERE id = ${reviewId} AND user_id = ${userId}
+      RETURNING id
+    `;
 
-    if (result.rowCount === 0) {
+    if (result.length === 0) {
       return res.status(404).json({ error: 'Review not found or not owned by you' });
     }
 
     // Optional: recalculate product average after deletion
-    const productRes = await pool.query(
-      'SELECT product_id FROM reviews WHERE id = $1',
-      [reviewId]
-    );
+    const productRes = await sql`
+      SELECT product_id FROM reviews WHERE id = ${reviewId}
+    `;
 
-    if (productRes.rows.length > 0) {
-      const productId = productRes.rows[0].product_id;
-      await pool.query(`
+    if (productRes.length > 0) {
+      const productId = productRes[0].product_id;
+      await sql`
         UPDATE products
         SET 
           avg_rating = COALESCE((
             SELECT ROUND(AVG(rating)::numeric, 1)
             FROM reviews
-            WHERE product_id = $1
+            WHERE product_id = ${productId}
           ), 0),
           review_count = (
             SELECT COUNT(*)
             FROM reviews
-            WHERE product_id = $1
+            WHERE product_id = ${productId}
           )
-        WHERE id = $1
-      `, [productId]);
+        WHERE id = ${productId}
+      `;
     }
 
     res.json({ message: 'Review deleted successfully' });
