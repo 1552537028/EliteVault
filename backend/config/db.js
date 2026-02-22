@@ -1,4 +1,17 @@
-import pkg from 'pg';
+//with URL connection string and SSL configuration for production environment
+import pkg from "pg";
+const { Pool } = pkg;
+
+const db = new Pool({
+  connectionString: process.env.DB_URL,
+  ssl: process.env.NODE_ENV === "production"
+    ? { rejectUnauthorized: false }
+    : false,
+});
+
+export default db;
+
+/*import pkg from 'pg';
 const { Pool } = pkg;
 
 const db = new Pool({
@@ -8,5 +21,3 @@ const db = new Pool({
     password: 'jayanthK@2006',
     port: 5432,
 });
-
-export default db;
