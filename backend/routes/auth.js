@@ -283,6 +283,3 @@ router.post('/verify-phone-otp', async (req, res) => {
 });
 
 export default router;
-
-
-export default router;
