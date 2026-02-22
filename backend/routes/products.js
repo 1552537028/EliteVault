@@ -3,7 +3,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { v4 as uuidv4 } from "uuid";
-import pool from "../config/db.js";
+import sql from "../config/db.js";
 
 const router = express.Router();
 
@@ -50,34 +50,33 @@ router.post("/add", upload.array("image", 5), async (req, res) => {
       console.warn("Invalid colors/sizes format:", e);
     }
 
-    const newProduct = await pool.query(
-      `INSERT INTO products 
-       (id, name, description, price, offer, category, stock, image_urls,
-        weight, length, breadth, height, hsn_code, colors, sizes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-       RETURNING *`,
-      [
-        uuidv4(),
-        name,
-        description || null,
-        Number(price),
-        Number(offer || 0),
-        category || null,
-        Number(stock || 0),
-        JSON.stringify(imageUrls),
-        Number(weight || 0.5),
-        Number(length || 20),
-        Number(breadth || 15),
-        Number(height || 10),
-        hsn_code || '9983',
-        JSON.stringify(parsedColors),
-        JSON.stringify(parsedSizes)
-      ]
-    );
+    const [newProduct] = await sql`
+      INSERT INTO products 
+      (id, name, description, price, offer, category, stock, image_urls,
+       weight, length, breadth, height, hsn_code, colors, sizes)
+      VALUES (
+        ${uuidv4()},
+        ${name},
+        ${description || null},
+        ${Number(price)},
+        ${Number(offer || 0)},
+        ${category || null},
+        ${Number(stock || 0)},
+        ${JSON.stringify(imageUrls)},
+        ${Number(weight || 0.5)},
+        ${Number(length || 20)},
+        ${Number(breadth || 15)},
+        ${Number(height || 10)},
+        ${hsn_code || "9983"},
+        ${JSON.stringify(parsedColors)},
+        ${JSON.stringify(parsedSizes)}
+      )
+      RETURNING *
+    `;
 
     res.status(201).json({
       message: "Product created successfully",
-      product: newProduct.rows[0],
+      product: newProduct,
     });
   } catch (error) {
     console.error("Create product error:", error);
@@ -91,18 +90,21 @@ router.post("/add", upload.array("image", 5), async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const { q } = req.query; // Use 'q' for search term
-    let query = "SELECT * FROM products";
-    const params = [];
-
+    let products;
     if (q) {
-      query += " WHERE LOWER(name) LIKE LOWER($1)";
-      params.push(`%${q}%`);
+      products = await sql`
+        SELECT * FROM products
+        WHERE LOWER(name) LIKE LOWER(${"%" + q + "%"})
+        ORDER BY created_at DESC
+      `;
+    } else {
+      products = await sql`
+        SELECT * FROM products
+        ORDER BY created_at DESC
+      `;
     }
 
-    query += " ORDER BY created_at DESC";
-
-    const products = await pool.query(query, params);
-    res.json(products.rows);
+    res.json(products);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
@@ -115,16 +117,15 @@ router.get("/", async (req, res) => {
 router.get("/product/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const product = await pool.query(
-      "SELECT * FROM products WHERE id = $1",
-      [id]
-    );
+    const product = await sql`
+      SELECT * FROM products WHERE id = ${id}
+    `;
 
-    if (product.rows.length === 0) {
+    if (product.length === 0) {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    res.json(product.rows[0]);
+    res.json(product[0]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
@@ -139,12 +140,12 @@ router.put("/update/:id", upload.array("image", 5), async (req, res) => {
     const { id } = req.params;
     const { name, description, price, offer, category, stock, colors, sizes } = req.body;
 
-    const existing = await pool.query("SELECT * FROM products WHERE id = $1", [id]);
-    if (existing.rows.length === 0) {
+    const existing = await sql`SELECT * FROM products WHERE id = ${id}`;
+    if (existing.length === 0) {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    const current = existing.rows[0];
+    const current = existing[0];
     let imageUrls = current.image_urls || [];
 
     if (req.files?.length > 0) {
@@ -164,36 +165,24 @@ router.put("/update/:id", upload.array("image", 5), async (req, res) => {
       if (sizes)  parsedSizes  = JSON.parse(sizes);
     } catch {}
 
-    const updated = await pool.query(
-      `UPDATE products
-       SET name = COALESCE($1, name),
-           description = COALESCE($2, description),
-           price = COALESCE($3, price),
-           offer = COALESCE($4, offer),
-           category = COALESCE($5, category),
-           stock = COALESCE($6, stock),
-           image_urls = $7,
-           colors = $8,
-           sizes = $9
-       WHERE id = $10
-       RETURNING *`,
-      [
-        name,
-        description,
-        price ? Number(price) : null,
-        offer ? Number(offer) : null,
-        category,
-        stock !== undefined ? Number(stock) : null,
-        JSON.stringify(imageUrls),
-        JSON.stringify(parsedColors),
-        JSON.stringify(parsedSizes),
-        id
-      ]
-    );
+    const [updated] = await sql`
+      UPDATE products
+      SET name = COALESCE(${name}, name),
+          description = COALESCE(${description}, description),
+          price = COALESCE(${price ? Number(price) : null}, price),
+          offer = COALESCE(${offer ? Number(offer) : null}, offer),
+          category = COALESCE(${category}, category),
+          stock = COALESCE(${stock !== undefined ? Number(stock) : null}, stock),
+          image_urls = ${JSON.stringify(imageUrls)},
+          colors = ${JSON.stringify(parsedColors)},
+          sizes = ${JSON.stringify(parsedSizes)}
+      WHERE id = ${id}
+      RETURNING *
+    `;
 
     res.json({
       message: "Product updated",
-      product: updated.rows[0]
+      product: updated
     });
   } catch (error) {
     console.error(error);
@@ -208,12 +197,13 @@ router.get("/category/:category", async (req, res) => {
   try {
     const { category } = req.params;
 
-    const products = await pool.query(
-      "SELECT * FROM products WHERE LOWER(category) = LOWER($1) ORDER BY created_at DESC",
-      [category]
-    );
+    const products = await sql`
+      SELECT * FROM products
+      WHERE LOWER(category) = LOWER(${category})
+      ORDER BY created_at DESC
+    `;
 
-    res.json(products.rows);
+    res.json(products);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
@@ -227,16 +217,15 @@ router.delete("/delete/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const productResult = await pool.query(
-      "SELECT * FROM products WHERE id = $1",
-      [id]
-    );
+    const productResult = await sql`
+      SELECT * FROM products WHERE id = ${id}
+    `;
 
-    if (productResult.rows.length === 0) {
+    if (productResult.length === 0) {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    const product = productResult.rows[0];
+    const product = productResult[0];
 
     // Delete all images
     if (product.image_urls && product.image_urls.length > 0) {
@@ -248,7 +237,7 @@ router.delete("/delete/:id", async (req, res) => {
       });
     }
 
-    await pool.query("DELETE FROM products WHERE id = $1", [id]);
+    await sql`DELETE FROM products WHERE id = ${id}`;
 
     res.json({
       message: "Product and images deleted successfully",
