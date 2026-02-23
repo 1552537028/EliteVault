@@ -17,36 +17,28 @@ useEffect(() => {
 
   let isMounted = true;
 
-  const pollStatus = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setStatus('error');
-        return;
-      }
+const pollStatus = async () => {
+  try {
+    const res = await API.get(`/orders/verify-payment/${orderId}`);
+    const data = res.data;
 
-      const res = await API.get(`/orders/verify-payment/${orderId}`);
-      const data = res.data;
-
-      if (data.paid || data.status === 'PAID' || data.status === 'SUCCESS') {
-        if (isMounted) {
-          setStatus('success');
-          setTimeout(() => navigate("/user-orders/me"), 2500);
-        }
-      } else if (data.status === 'FAILED' || data.status === 'CANCELLED') {
-        setStatus('failed');
+    if (data.paid || data.status === 'PAID' || data.status === 'SUCCESS') {
+      if (isMounted) {
+        setStatus('success');
+        setTimeout(() => navigate("/user-orders/me"), 2500);
       }
-      // else keep polling (still pending)
-    } catch (err) {
-      console.error('Poll error:', err);
-      if (err?.response?.status === 404) {
-        if (isMounted) setStatus('not-found');
-        return;
-      }
-      if (isMounted) setStatus('error');
+    } else if (data.status === 'FAILED' || data.status === 'CANCELLED') {
+      setStatus('failed');
     }
-  };
-
+  } catch (err) {
+    console.error('Poll error:', err);
+    if (err?.response?.status === 404) {
+      if (isMounted) setStatus('not-found');
+      return;
+    }
+    if (isMounted) setStatus('error');
+  }
+};
   pollStatus();
   const interval = setInterval(pollStatus, 6000); // slightly longer interval
 
