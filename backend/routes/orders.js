@@ -16,7 +16,7 @@ const router = express.Router();
 const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID;
 const CASHFREE_SECRET = process.env.CASHFREE_SECRET;
 const CASHFREE_URL = 'https://sandbox.cashfree.com/pg/orders';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://elite-vault.onrender.com';
 const WEBHOOK_BASE_URL = process.env.WEBHOOK_BASE_URL || '';
 
 // iThink Logistics Configuration
