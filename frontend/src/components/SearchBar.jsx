@@ -8,7 +8,7 @@ const SearchBar = () => {
 
   const handleSearch = () => {
     if (!searchTerm.trim()) return;
-    navigate(`/search?q=${encodeURIComponent(searchTerm)}`); // Updated to navigate to the SearchResults page
+    navigate(`/search?q=${encodeURIComponent(searchTerm)}`);
   };
 
   const handleKeyDown = (e) => {
@@ -23,14 +23,14 @@ const SearchBar = () => {
         onChange={(e) => setSearchTerm(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Search products..."
-        className="w-full p-3 pr-14 text-white border border-[#E5E0D8] rounded-md"
+        className="w-full h-8 sm:h-12 px-3 pr-12 text-white bg-[#1c1c1c] border border-[#E5E0D8] rounded-none focus:outline-none"
       />
 
       <button
         onClick={handleSearch}
-        className="absolute right-0 top-0 h-full w-12 bg-[#C6A75E] rounded-r-md flex items-center justify-center"
+        className="absolute right-0 top-0 h-8 sm:h-12 w-12 bg-[#C6A75E] flex items-center justify-center rounded-none"
       >
-        <IoIosSearch className="h-6 w-6 text-white" />
+        <IoIosSearch className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
       </button>
     </div>
   );
