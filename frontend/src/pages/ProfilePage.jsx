@@ -186,278 +186,250 @@ export default function ProfilePage() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-10 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-lg p-6 md:p-10">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-10">
-          <h1 className="text-3xl font-heading mb-8 text-center md:text-left">My Profile</h1>
+  <div className="min-h-screen bg-[#eae8e6] py-12 px-6">
+    <div className="max-w-4xl mx-auto bg-white border border-black/10 shadow-2xl p-10">
 
-          {/* Show Admin Panel only if user is admin */}
-          {user?.email === ADMIN_EMAIL && (
+      {/* Header */}
+      <div className="flex justify-between items-center mb-12">
+        <h1 className="text-3xl tracking-wide font-semibold uppercase">
+          My Profile
+        </h1>
+
+        {user?.email === ADMIN_EMAIL && (
+          <button
+            onClick={() => navigate("/list")}
+            className="border border-black px-6 py-3 uppercase tracking-wide hover:bg-black hover:text-white transition"
+          >
+            Admin Panel
+          </button>
+        )}
+      </div>
+
+      {/* ───── Personal Info ───── */}
+      <section className="mb-16 border-b border-black/20 pb-12">
+        <div className="flex justify-between items-center mb-8">
+          <h2 className="text-xl uppercase tracking-wide">
+            Personal Information
+          </h2>
+
+          {!editingProfile && (
             <button
-              onClick={() => navigate("/list")}
-              className="mb-8 block md:inline-block bg-[#1C1C1C] hover:bg-[#2C2C2C] text-white px-6 py-3 font-heading"
+              onClick={() => setEditingProfile(true)}
+              className="uppercase text-sm tracking-wide hover:underline"
             >
-              Admin Panel
+              Edit
             </button>
           )}
         </div>
 
-        {/* ── Personal Info ───────────────────────────────────── */}
-        <section className="mb-12 border-b pb-10">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-heading">Personal Information</h2>
-            {!editingProfile && (
+        {editingProfile ? (
+          <div className="space-y-6">
+
+            <input
+              value={profileForm.name}
+              onChange={e => setProfileForm({...profileForm, name: e.target.value})}
+              placeholder="FULL NAME"
+              className="w-full border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+            />
+
+            <input
+              type="email"
+              value={profileForm.email}
+              onChange={e => setProfileForm({...profileForm, email: e.target.value})}
+              placeholder="EMAIL"
+              className="w-full border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+            />
+
+            <input
+              type="tel"
+              value={profileForm.phone}
+              onChange={e => setProfileForm({...profileForm, phone: e.target.value})}
+              placeholder="PHONE"
+              className="w-full border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+            />
+
+            <input
+              type="password"
+              value={profileForm.password}
+              onChange={e => setProfileForm({...profileForm, password: e.target.value})}
+              placeholder="NEW PASSWORD (OPTIONAL)"
+              className="w-full border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+            />
+
+            {otpFor !== "profile" ? (
               <button
-                onClick={() => setEditingProfile(true)}
-                className="flex items-center gap-2 text-gray-700 hover:text-black"
+                onClick={() => sendOtp("profile", profileForm.phone)}
+                disabled={otpTimer > 0}
+                className="w-full border border-black py-3 uppercase tracking-wide hover:bg-black hover:text-white transition"
               >
-                <LuPencilLine /> Edit
+                {otpTimer > 0 ? `RESEND IN ${otpTimer}s` : "VERIFY PHONE & SAVE"}
               </button>
-            )}
-          </div>
-
-          {editingProfile ? (
-            <div className="space-y-5">
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Name</label>
-                <input
-                  value={profileForm.name}
-                  onChange={e => setProfileForm({...profileForm, name: e.target.value})}
-                  className="w-full border rounded-lg px-4 py-2.5"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={profileForm.email}
-                  onChange={e => setProfileForm({...profileForm, email: e.target.value})}
-                  className="w-full border rounded-lg px-4 py-2.5"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Phone</label>
-                <input
-                  type="tel"
-                  value={profileForm.phone}
-                  onChange={e => setProfileForm({...profileForm, phone: e.target.value})}
-                  className="w-full border rounded-lg px-4 py-2.5"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">New Password (optional)</label>
-                <input
-                  type="password"
-                  value={profileForm.password}
-                  onChange={e => setProfileForm({...profileForm, password: e.target.value})}
-                  placeholder="Leave blank to keep current"
-                  className="w-full border rounded-lg px-4 py-2.5"
-                />
-              </div>
-
-              {otpFor !== "profile" ? (
-                <button
-                  onClick={() => sendOtp("profile", profileForm.phone)}
-                  disabled={otpTimer > 0}
-                  className={`w-full py-3 rounded-lg text-white font-medium ${
-                    otpTimer > 0 ? "bg-gray-400" : "bg-black hover:bg-gray-800"
-                  }`}
-                >
-                  {otpTimer > 0 ? `Resend in ${otpTimer}s` : "Verify Phone & Save"}
-                </button>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      placeholder="Enter 6-digit OTP"
-                      value={otp}
-                      onChange={e => setOtp(e.target.value.slice(0,6))}
-                      className="flex-1 border px-4 py-2.5"
-                    />
-                    <button
-                      onClick={() => verifyAndSave("profile")}
-                      className="bg-[#1C1C1C] text-white px-6 py-2.5 hover:bg-gray-800"
-                    >
-                      Confirm
-                    </button>
-                  </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex gap-3">
+                  <input
+                    placeholder="ENTER OTP"
+                    value={otp}
+                    onChange={e => setOtp(e.target.value.slice(0,6))}
+                    className="flex-1 border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+                  />
                   <button
-                    onClick={() => {
-                      setOtpFor(null);
-                      setOtp("");
-                      setOtpTimer(0);
-                      clearInterval(timerRef.current);
-                    }}
-                    className="text-gray-600 hover:underline text-sm"
+                    onClick={() => verifyAndSave("profile")}
+                    className="border border-black px-6 py-3 uppercase hover:bg-black hover:text-white transition"
                   >
-                    Cancel
+                    Confirm
                   </button>
                 </div>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-gray-800">
-              <div>
-                <p className="text-sm text-gray-500">Name</p>
-                <p className="font-medium">{user.name || "—"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Email</p>
-                <p className="font-medium break-all">{user.email || "—"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Phone</p>
-                <p className="font-medium">{user.phone || "Not set"}</p>
-              </div>
-            </div>
-          )}
-        </section>
 
-        {/* ── Addresses ───────────────────────────────────────── */}
-        <section>
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-semibold">Addresses</h2>
-            {editingAddressId === null && (
-              <button
-                onClick={() => startEditAddress()}
-                className="flex items-center gap-2 bg-black text-white px-5 py-2 rounded-lg hover:bg-gray-800"
-              >
-                <LuPlus size={18} /> Add New
-              </button>
+                <button
+                  onClick={() => {
+                    setOtpFor(null);
+                    setOtp("");
+                    setOtpTimer(0);
+                  }}
+                  className="text-sm hover:underline"
+                >
+                  Cancel
+                </button>
+              </div>
             )}
           </div>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-8 text-gray-800">
+            <div>
+              <p className="text-xs tracking-wide text-gray-500 uppercase">Name</p>
+              <p className="mt-1 font-medium">{user.name}</p>
+            </div>
+            <div>
+              <p className="text-xs tracking-wide text-gray-500 uppercase">Email</p>
+              <p className="mt-1 font-medium break-all">{user.email}</p>
+            </div>
+            <div>
+              <p className="text-xs tracking-wide text-gray-500 uppercase">Phone</p>
+              <p className="mt-1 font-medium">{user.phone || "Not set"}</p>
+            </div>
+          </div>
+        )}
+      </section>
 
-          {editingAddressId && (
-            <div className="border rounded-xl p-6 mb-8 bg-gray-50">
-              <h3 className="text-lg font-medium mb-4">
-                {editingAddressId === "new" ? "Add New Address" : "Edit Address"}
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  placeholder="Address Line 1 *"
-                  value={addressForm.address1}
-                  onChange={e => setAddressForm({...addressForm, address1: e.target.value})}
-                  className="border rounded-lg px-4 py-2.5"
-                />
-                <input
-                  placeholder="Address Line 2"
-                  value={addressForm.address2}
-                  onChange={e => setAddressForm({...addressForm, address2: e.target.value})}
-                  className="border rounded-lg px-4 py-2.5"
-                />
-                <input
-                  placeholder="Landmark"
-                  value={addressForm.landmark}
-                  onChange={e => setAddressForm({...addressForm, landmark: e.target.value})}
-                  className="border rounded-lg px-4 py-2.5"
-                />
-                <input
-                  placeholder="City *"
-                  value={addressForm.city}
-                  onChange={e => setAddressForm({...addressForm, city: e.target.value})}
-                  className="border rounded-lg px-4 py-2.5"
-                />
-                <input
-                  placeholder="State *"
-                  value={addressForm.state}
-                  onChange={e => setAddressForm({...addressForm, state: e.target.value})}
-                  className="border rounded-lg px-4 py-2.5"
-                />
-                <input
-                  placeholder="Pincode *"
-                  value={addressForm.pincode}
-                  onChange={e => setAddressForm({...addressForm, pincode: e.target.value})}
-                  className="border rounded-lg px-4 py-2.5"
-                />
-              </div>
+      {/* ───── Addresses ───── */}
+      <section>
+        <div className="flex justify-between items-center mb-10">
+          <h2 className="text-xl uppercase tracking-wide">
+            Addresses
+          </h2>
 
+          {editingAddressId === null && (
+            <button
+              onClick={() => startEditAddress()}
+              className="border border-black px-6 py-3 uppercase tracking-wide hover:bg-black hover:text-white transition"
+            >
+              Add New
+            </button>
+          )}
+        </div>
+
+        {editingAddressId && (
+          <div className="border border-black p-8 mb-10">
+
+            <div className="grid md:grid-cols-2 gap-6">
+              <input
+                placeholder="ADDRESS LINE 1"
+                value={addressForm.address1}
+                onChange={e => setAddressForm({...addressForm, address1: e.target.value})}
+                className="border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+              />
+              <input
+                placeholder="ADDRESS LINE 2"
+                value={addressForm.address2}
+                onChange={e => setAddressForm({...addressForm, address2: e.target.value})}
+                className="border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+              />
+              <input
+                placeholder="CITY"
+                value={addressForm.city}
+                onChange={e => setAddressForm({...addressForm, city: e.target.value})}
+                className="border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+              />
+              <input
+                placeholder="STATE"
+                value={addressForm.state}
+                onChange={e => setAddressForm({...addressForm, state: e.target.value})}
+                className="border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+              />
+              <input
+                placeholder="PINCODE"
+                value={addressForm.pincode}
+                onChange={e => setAddressForm({...addressForm, pincode: e.target.value})}
+                className="border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+              />
+            </div>
+
+            <div className="mt-8">
               {otpFor !== "address" ? (
                 <button
-                  onClick={() => sendOtp("address", profileForm.phone || addressForm.phone)}
+                  onClick={() => sendOtp("address", profileForm.phone)}
                   disabled={otpTimer > 0}
-                  className={`mt-6 w-full py-3 rounded-lg text-white font-medium ${
-                    otpTimer > 0 ? "bg-gray-400" : "bg-black hover:bg-gray-800"
-                  }`}
+                  className="w-full border border-black py-3 uppercase tracking-wide hover:bg-black hover:text-white transition"
                 >
-                  {otpTimer > 0 ? `Resend in ${otpTimer}s` : "Verify Phone & Save Address"}
+                  {otpTimer > 0 ? `RESEND IN ${otpTimer}s` : "VERIFY & SAVE ADDRESS"}
                 </button>
               ) : (
-                <div className="mt-6 space-y-3">
+                <div className="space-y-4">
                   <div className="flex gap-3">
                     <input
-                      placeholder="Enter OTP"
+                      placeholder="ENTER OTP"
                       value={otp}
                       onChange={e => setOtp(e.target.value.slice(0,6))}
-                      className="flex-1 border rounded-lg px-4 py-2.5"
+                      className="flex-1 border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
                     />
                     <button
                       onClick={() => verifyAndSave("address")}
-                      className="bg-green-600 text-white px-7 py-2.5 rounded-lg hover:bg-green-700"
+                      className="border border-black px-6 py-3 uppercase hover:bg-black hover:text-white transition"
                     >
                       Save
                     </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      setOtpFor(null);
-                      setOtp("");
-                      setOtpTimer(0);
-                    }}
-                    className="text-gray-600 hover:underline text-sm block"
-                  >
-                    Cancel
-                  </button>
                 </div>
               )}
             </div>
-          )}
-
-          <div className="space-y-5">
-            {addresses.length === 0 && editingAddressId === null && (
-              <div className="text-center py-12 text-gray-500 border border-dashed rounded-xl">
-                No addresses added yet
-              </div>
-            )}
-
-            {addresses.map(addr => (
-              <div
-                key={addr.id}
-                className="p-5 bg-gray-50 rounded-xl border relative group"
-              >
-                {editingAddressId !== addr.id ? (
-                  <>
-                    <p className="font-medium">{addr.address1}</p>
-                    {addr.address2 && <p>{addr.address2}</p>}
-                    {addr.landmark && <p className="text-sm text-gray-600">Landmark: {addr.landmark}</p>}
-                    <p className="mt-1 text-sm">
-                      {addr.city}, {addr.state} — {addr.pincode}
-                    </p>
-                    <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition">
-                      <button
-                        onClick={() => startEditAddress(addr)}
-                        className="text-blue-600 hover:text-blue-800 mr-3"
-                      >
-                        Edit
-                      </button>
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            ))}
           </div>
-        </section>
+        )}
 
-        <button
-          onClick={() => {
-            localStorage.removeItem("token");
-            navigate("/login");
-          }}
-          className="mt-12 w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-medium"
-        >
-          Logout
-        </button>
-      </div>
+        <div className="space-y-6">
+          {addresses.map(addr => (
+            <div
+              key={addr.id}
+              className="border border-black/20 p-6"
+            >
+              <p className="font-medium">{addr.address1}</p>
+              {addr.address2 && <p>{addr.address2}</p>}
+              <p className="text-sm mt-1">
+                {addr.city}, {addr.state} — {addr.pincode}
+              </p>
+
+              <button
+                onClick={() => startEditAddress(addr)}
+                className="mt-4 text-sm uppercase tracking-wide hover:underline"
+              >
+                Edit
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <button
+        onClick={() => {
+          localStorage.removeItem("token");
+          navigate("/login");
+        }}
+        className="mt-16 w-full border border-black py-3 uppercase tracking-wide hover:bg-black hover:text-white transition"
+      >
+        Logout
+      </button>
+
     </div>
-  );
+  </div>
+);
 }
