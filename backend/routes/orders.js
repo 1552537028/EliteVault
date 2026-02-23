@@ -635,15 +635,20 @@ router.get('/user/me', async (req, res) => {
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userId = decoded.id;  // this is the real UUID
+    const userId = decoded.id;
 
     const orders = await sql`
-      SELECT o.*, p.name as product_name, p.image_urls,
-             a.city, a.state
+      SELECT 
+        o.*, 
+        p.name AS product_name, 
+        p.image_urls,
+        a.city, 
+        a.state
       FROM orders o
       JOIN products p ON o.product_id = p.id
-      JOIN addresses a ON o.address_id = a.id
+      LEFT JOIN addresses a ON o.address_id = a.id
       WHERE o.user_id = ${userId}
+      AND o.status = 'PAID'
       ORDER BY o.created_at DESC
     `;
 
@@ -656,7 +661,6 @@ router.get('/user/me', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 // ────────────────────────────────────────────────
 //  GET ALL ORDERS – ADMIN ONLY (/api/orders/all)
 // ────────────────────────────────────────────────
