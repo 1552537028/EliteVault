@@ -80,8 +80,8 @@ export default function ProductList() {
                     />
                   </td>
                   <td className="p-2">{product.name}</td>
-                  <td className="p-2">${product.price}</td>
-                  <td className="p-2">${product.offer}</td>
+                  <td className="p-2">₹{product.price}</td>
+                  <td className="p-2">{product.offer}%</td>
                   <td className="p-2">{product.category}</td>
                   <td className="p-2">{product.stock}</td>
                   <td className="p-2 cursor-pointer text-yellow-500 hover:text-yellow-600"
