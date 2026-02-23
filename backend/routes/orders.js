@@ -331,7 +331,10 @@ router.post('/create-session', async (req, res) => {
     }
 
     const orderId = uuidv4();
-
+    console.log("🔥 FRONTEND_URL used:", FRONTEND_URL);
+    console.log("🔥 Return URL being sent:",
+    `${FRONTEND_URL}/payment-status?orderId=${orderId}`
+    );
     // Fetch user, product, address
     const userRes = await sql`SELECT * FROM users WHERE id = ${userId}`;
     const productRes = await sql`SELECT * FROM products WHERE id = ${productId}`;
