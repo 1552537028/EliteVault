@@ -25,9 +25,7 @@ useEffect(() => {
         return;
       }
 
-      const res = await API.get(`/orders/verify-payment/${orderId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await API.get(`/orders/verify-payment/${orderId}`);
       const data = res.data;
 
       if (data.paid || data.status === 'PAID' || data.status === 'SUCCESS') {
