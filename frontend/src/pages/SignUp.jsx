@@ -1,17 +1,18 @@
-// Updated SignUp.jsx with phone number and OTP verification
+// Premium Square SignUp UI
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import API from "../api"; // make sure this path is correct
+import API from "../api";
 
 export default function Signup() {
   const navigate = useNavigate();
-  
+
   const [form, setForm] = useState({
     name: "",
     email: "",
     phone: "",
     password: "",
   });
+
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState("");
   const [otpTimer, setOtpTimer] = useState(0);
@@ -49,9 +50,18 @@ export default function Signup() {
     setError("");
 
     try {
-      await API.post("/auth/send-phone-otp", { phone });
+      const res = await API.post("/auth/send-phone-otp", { phone });
 
-      alert("OTP sent! (Check console for demo)");
+      // Open WhatsApp with prefilled OTP
+      const message = encodeURIComponent(
+        `Your OTP for account verification is: ${res.data.otp}`
+      );
+
+      window.open(
+        `https://wa.me/91${phone}?text=${message}`,
+        "_blank"
+      );
+
       setOtpSent(true);
       startOtpTimer();
     } catch (err) {
@@ -74,17 +84,13 @@ export default function Signup() {
     setError("");
 
     try {
-      // Verify OTP
       await API.post("/auth/verify-phone-otp", { phone, otp });
-
-      // Signup
       await API.post("/auth/signup", { name, email, phone, password });
 
-      alert("Account created successfully! Please log in.");
+      alert("Account created successfully!");
       navigate("/login");
     } catch (err) {
-      setError("Something went wrong. Please try again later.");
-      console.error(err);
+      setError("Invalid OTP or something went wrong.");
     } finally {
       setLoading(false);
     }
@@ -95,118 +101,113 @@ export default function Signup() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f2f0ef] px-6 py-12">
-      <div className="w-full max-w-md bg-white p-10 rounded-2xl shadow-xl font-inter">
-        <h1 className="text-3xl font-playfair mb-8 text-center">Create Account</h1>
+    <div className="min-h-screen flex items-center justify-center bg-[#eae8e6] px-6">
+      <div className="w-full max-w-md bg-white border border-black/10 p-10 shadow-2xl">
 
-        <div className="space-y-5">
+        <h1 className="text-3xl tracking-wide font-semibold mb-10 text-center">
+          CREATE ACCOUNT
+        </h1>
+
+        <div className="space-y-6">
+
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            <div className="border border-black text-black px-4 py-3 text-sm">
               {error}
             </div>
           )}
 
-          <div>
-            <input
-              type="text"
-              name="name"
-              placeholder="Full Name"
-              value={form.name}
-              onChange={handleChange}
-              className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition"
-              disabled={loading || otpSent}
-            />
-          </div>
+          <input
+            type="text"
+            name="name"
+            placeholder="FULL NAME"
+            value={form.name}
+            onChange={handleChange}
+            disabled={loading || otpSent}
+            className="w-full border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+          />
 
-          <div>
-            <input
-              type="email"
-              name="email"
-              placeholder="Email Address"
-              value={form.email}
-              onChange={handleChange}
-              className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition"
-              disabled={loading || otpSent}
-            />
-          </div>
+          <input
+            type="email"
+            name="email"
+            placeholder="EMAIL ADDRESS"
+            value={form.email}
+            onChange={handleChange}
+            disabled={loading || otpSent}
+            className="w-full border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+          />
 
-          <div>
-            <input
-              type="tel"
-              name="phone"
-              placeholder="Phone Number"
-              value={form.phone}
-              onChange={handleChange}
-              className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition"
-              disabled={loading || otpSent}
-            />
-          </div>
+          <input
+            type="tel"
+            name="phone"
+            placeholder="PHONE NUMBER"
+            value={form.phone}
+            onChange={handleChange}
+            disabled={loading || otpSent}
+            className="w-full border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+          />
 
-          <div>
-            <input
-              type="password"
-              name="password"
-              placeholder="Password"
-              value={form.password}
-              onChange={handleChange}
-              className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition"
-              disabled={loading || otpSent}
-            />
-          </div>
+          <input
+            type="password"
+            name="password"
+            placeholder="PASSWORD"
+            value={form.password}
+            onChange={handleChange}
+            disabled={loading || otpSent}
+            className="w-full border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
+          />
 
           {!otpSent ? (
             <button
               onClick={sendOtp}
               disabled={loading}
-              className={`w-full py-3 rounded-lg font-medium text-white transition ${
-                loading ? "bg-gray-400 cursor-not-allowed" : "bg-black hover:bg-gray-800"
-              }`}
+              className="w-full border border-black py-3 uppercase tracking-wide hover:bg-black hover:text-white transition"
             >
-              {loading ? "Sending OTP..." : "Send OTP to Phone"}
+              {loading ? "SENDING..." : "SEND OTP"}
             </button>
           ) : (
             <>
               <div className="flex gap-3">
                 <input
                   type="text"
-                  placeholder="Enter 6-digit OTP"
+                  placeholder="ENTER OTP"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.slice(0, 6))}
-                  className="flex-1 border border-gray-300 px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition"
                   disabled={loading}
+                  className="flex-1 border border-black px-4 py-3 outline-none focus:bg-black focus:text-white transition"
                 />
+
                 <button
                   onClick={handleSignup}
                   disabled={loading}
-                  className={`px-6 py-3 rounded-lg font-medium text-white transition ${
-                    loading ? "bg-gray-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"
-                  }`}
+                  className="border border-black px-6 py-3 uppercase tracking-wide hover:bg-black hover:text-white transition"
                 >
-                  {loading ? "Verifying..." : "Verify & Sign Up"}
+                  VERIFY
                 </button>
               </div>
+
               <button
                 onClick={sendOtp}
                 disabled={otpTimer > 0 || loading}
-                className={`mt-2 w-full py-2 text-sm text-gray-600 hover:text-black transition ${
-                  otpTimer > 0 || loading ? "cursor-not-allowed" : ""
-                }`}
+                className="w-full text-sm tracking-wide mt-2 hover:underline"
               >
-                {otpTimer > 0 ? `Resend OTP in ${otpTimer}s` : "Resend OTP"}
+                {otpTimer > 0
+                  ? `RESEND IN ${otpTimer}s`
+                  : "RESEND OTP"}
               </button>
             </>
           )}
         </div>
 
-        <p className="mt-8 text-center text-gray-600 text-sm">
+        <p className="mt-10 text-center text-sm tracking-wide">
           Already have an account?{" "}
           <span
             onClick={() => navigate("/login")}
-            className="text-black font-semibold cursor-pointer hover:underline"
+            className="cursor-pointer underline"
           >
-            Log in
+            LOG IN
           </span>
         </p>
+
       </div>
     </div>
   );
