@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LuPencilLine, LuPlus } from "react-icons/lu";
 import API from "../api";
@@ -10,47 +10,36 @@ export default function ProfilePage() {
   const [user, setUser] = useState(null);
   const [addresses, setAddresses] = useState([]);
 
-  // Profile editing
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
-    name: "", email: "", phone: "", password: "",
+    name: "",
+    email: "",
+    phone: "",
+    password: "",
   });
 
-  // OTP for profile
-  const [otpFor, setOtpFor] = useState(null); // "profile" | "address" | null
-  const [otp, setOtp] = useState("");
-  const [otpTimer, setOtpTimer] = useState(0);
-  const timerRef = useRef(null);
-
-  // Address editing state (id = "new" for adding)
   const [editingAddressId, setEditingAddressId] = useState(null);
   const [addressForm, setAddressForm] = useState({
-    address1: "", address2: "", landmark: "", city: "", state: "", pincode: "",
+    address1: "",
+    address2: "",
+    landmark: "",
+    city: "",
+    state: "",
+    pincode: "",
   });
 
   const [loading, setLoading] = useState(true);
 
-  // Admin email
-  const ADMIN_EMAIL = "jayanthkopparthi595@gmail.com" || "kadamshankar1512@gmail.com"; // <--- set your admin email here
+  const ADMIN_EMAIL =
+    "jayanthkopparthi595@gmail.com" || "kadamshankar1512@gmail.com";
 
   useEffect(() => {
-    if (!token) return navigate("/login");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
     loadProfile();
-    return () => clearInterval(timerRef.current);
   }, [token]);
-
-  const startOtpTimer = () => {
-    setOtpTimer(60);
-    timerRef.current = setInterval(() => {
-      setOtpTimer((prev) => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
 
   const loadProfile = async () => {
     setLoading(true);
@@ -78,57 +67,27 @@ export default function ProfilePage() {
     try {
       const { data } = await API.get(`/auth/address/${userId}`);
       setAddresses(data || []);
-    } catch {}
-  };
-
-  // ── OTP flow ───────────────────────────────────────
-  const sendOtp = async (purpose, phoneValue) => {
-    if (!phoneValue?.trim()) return alert("Phone number is required");
-
-    try {
-      await API.post("/auth/send-phone-otp", { phone: phoneValue.trim() });
-      alert("OTP sent (check console for demo)");
-      setOtpFor(purpose);
-      setOtp("");
-      startOtpTimer();
     } catch {
-      alert("Failed to send OTP");
-    }
-  };
-
-  const verifyAndSave = async (purpose) => {
-    if (!otp.trim()) return alert("Enter OTP");
-
-    try {
-      await API.post("/auth/verify-phone-otp", {
-        phone: purpose === "profile" ? profileForm.phone : addressForm.phone || profileForm.phone,
-        otp,
-      });
-
-      // OTP verified → now save
-      if (purpose === "profile") {
-        await saveProfile();
-      } else if (purpose === "address") {
-        await saveAddress();
-      }
-
-      setOtpFor(null);
-      setOtp("");
-      setOtpTimer(0);
-      clearInterval(timerRef.current);
-    } catch {
-      alert("Verification failed");
+      setAddresses([]);
     }
   };
 
   const saveProfile = async () => {
+    if (!profileForm.name.trim() || !profileForm.email.trim()) {
+      alert("Name and email are required");
+      return;
+    }
+
     try {
       const body = {
         name: profileForm.name,
         email: profileForm.email,
         phone: profileForm.phone,
       };
-      if (profileForm.password) body.password = profileForm.password;
+
+      if (profileForm.password) {
+        body.password = profileForm.password;
+      }
 
       await API.put("/auth/update-user", body, {
         headers: {
@@ -138,12 +97,17 @@ export default function ProfilePage() {
       alert("Profile updated!");
       setEditingProfile(false);
       loadProfile();
-    } catch {
-      alert("Failed to update profile");
+    } catch (err) {
+      alert(err?.response?.data?.error || "Failed to update profile");
     }
   };
 
   const saveAddress = async () => {
+    if (!addressForm.address1 || !addressForm.city || !addressForm.state || !addressForm.pincode) {
+      alert("Please fill all required address fields");
+      return;
+    }
+
     try {
       const body = { ...addressForm, userId: user.id };
 
@@ -152,10 +116,16 @@ export default function ProfilePage() {
       } else {
         await API.put(`/auth/address/${editingAddressId}`, body);
       }
+
       alert(editingAddressId === "new" ? "Address added!" : "Address updated!");
       setEditingAddressId(null);
       setAddressForm({
-        address1: "", address2: "", landmark: "", city: "", state: "", pincode: "",
+        address1: "",
+        address2: "",
+        landmark: "",
+        city: "",
+        state: "",
+        pincode: "",
       });
       loadAddresses(user.id);
     } catch {
@@ -174,16 +144,27 @@ export default function ProfilePage() {
         pincode: addr.pincode || "",
       });
       setEditingAddressId(addr.id);
-    } else {
-      setAddressForm({
-        address1: "", address2: "", landmark: "", city: "", state: "", pincode: "",
-      });
-      setEditingAddressId("new");
+      return;
     }
+
+    setAddressForm({
+      address1: "",
+      address2: "",
+      landmark: "",
+      city: "",
+      state: "",
+      pincode: "",
+    });
+    setEditingAddressId("new");
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  if (!user) return null;
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4 sm:px-6 lg:px-8">
@@ -191,7 +172,6 @@ export default function ProfilePage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-10">
           <h1 className="text-3xl font-heading mb-8 text-center md:text-left">My Profile</h1>
 
-          {/* Show Admin Panel only if user is admin */}
           {user?.email === ADMIN_EMAIL && (
             <button
               onClick={() => navigate("/list")}
@@ -202,7 +182,6 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* ── Personal Info ───────────────────────────────────── */}
         <section className="mb-12 border-b pb-10">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-heading">Personal Information</h2>
@@ -222,7 +201,7 @@ export default function ProfilePage() {
                 <label className="block text-sm text-gray-600 mb-1">Name</label>
                 <input
                   value={profileForm.name}
-                  onChange={e => setProfileForm({...profileForm, name: e.target.value})}
+                  onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
                   className="w-full border rounded-lg px-4 py-2.5"
                 />
               </div>
@@ -231,7 +210,7 @@ export default function ProfilePage() {
                 <input
                   type="email"
                   value={profileForm.email}
-                  onChange={e => setProfileForm({...profileForm, email: e.target.value})}
+                  onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
                   className="w-full border rounded-lg px-4 py-2.5"
                 />
               </div>
@@ -240,7 +219,7 @@ export default function ProfilePage() {
                 <input
                   type="tel"
                   value={profileForm.phone}
-                  onChange={e => setProfileForm({...profileForm, phone: e.target.value})}
+                  onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
                   className="w-full border rounded-lg px-4 py-2.5"
                 />
               </div>
@@ -249,62 +228,28 @@ export default function ProfilePage() {
                 <input
                   type="password"
                   value={profileForm.password}
-                  onChange={e => setProfileForm({...profileForm, password: e.target.value})}
+                  onChange={(e) => setProfileForm({ ...profileForm, password: e.target.value })}
                   placeholder="Leave blank to keep current"
                   className="w-full border rounded-lg px-4 py-2.5"
                 />
               </div>
 
-              {otpFor !== "profile" ? (
-                <button
-                  onClick={() => sendOtp("profile", profileForm.phone)}
-                  disabled={otpTimer > 0}
-                  className={`w-full py-3 rounded-lg text-white font-medium ${
-                    otpTimer > 0 ? "bg-gray-400" : "bg-black hover:bg-gray-800"
-                  }`}
-                >
-                  {otpTimer > 0 ? `Resend in ${otpTimer}s` : "Verify Phone & Save"}
-                </button>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      placeholder="Enter 6-digit OTP"
-                      value={otp}
-                      onChange={e => setOtp(e.target.value.slice(0,6))}
-                      className="flex-1 border px-4 py-2.5"
-                    />
-                    <button
-                      onClick={() => verifyAndSave("profile")}
-                      className="bg-[#1C1C1C] text-white px-6 py-2.5 hover:bg-gray-800"
-                    >
-                      Confirm
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setOtpFor(null);
-                      setOtp("");
-                      setOtpTimer(0);
-                      clearInterval(timerRef.current);
-                    }}
-                    className="text-gray-600 hover:underline text-sm"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
+              <button
+                onClick={saveProfile}
+                className="w-full py-3 rounded-lg text-white font-medium bg-black hover:bg-gray-800"
+              >
+                Save Profile
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-gray-800">
               <div>
                 <p className="text-sm text-gray-500">Name</p>
-                <p className="font-medium">{user.name || "—"}</p>
+                <p className="font-medium">{user.name || "-"}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Email</p>
-                <p className="font-medium break-all">{user.email || "—"}</p>
+                <p className="font-medium break-all">{user.email || "-"}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Phone</p>
@@ -314,7 +259,6 @@ export default function ProfilePage() {
           )}
         </section>
 
-        {/* ── Addresses ───────────────────────────────────────── */}
         <section>
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-semibold">Addresses</h2>
@@ -337,79 +281,47 @@ export default function ProfilePage() {
                 <input
                   placeholder="Address Line 1 *"
                   value={addressForm.address1}
-                  onChange={e => setAddressForm({...addressForm, address1: e.target.value})}
+                  onChange={(e) => setAddressForm({ ...addressForm, address1: e.target.value })}
                   className="border rounded-lg px-4 py-2.5"
                 />
                 <input
                   placeholder="Address Line 2"
                   value={addressForm.address2}
-                  onChange={e => setAddressForm({...addressForm, address2: e.target.value})}
+                  onChange={(e) => setAddressForm({ ...addressForm, address2: e.target.value })}
                   className="border rounded-lg px-4 py-2.5"
                 />
                 <input
                   placeholder="Landmark"
                   value={addressForm.landmark}
-                  onChange={e => setAddressForm({...addressForm, landmark: e.target.value})}
+                  onChange={(e) => setAddressForm({ ...addressForm, landmark: e.target.value })}
                   className="border rounded-lg px-4 py-2.5"
                 />
                 <input
                   placeholder="City *"
                   value={addressForm.city}
-                  onChange={e => setAddressForm({...addressForm, city: e.target.value})}
+                  onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
                   className="border rounded-lg px-4 py-2.5"
                 />
                 <input
                   placeholder="State *"
                   value={addressForm.state}
-                  onChange={e => setAddressForm({...addressForm, state: e.target.value})}
+                  onChange={(e) => setAddressForm({ ...addressForm, state: e.target.value })}
                   className="border rounded-lg px-4 py-2.5"
                 />
                 <input
                   placeholder="Pincode *"
                   value={addressForm.pincode}
-                  onChange={e => setAddressForm({...addressForm, pincode: e.target.value})}
+                  onChange={(e) => setAddressForm({ ...addressForm, pincode: e.target.value })}
                   className="border rounded-lg px-4 py-2.5"
                 />
               </div>
 
-              {otpFor !== "address" ? (
-                <button
-                  onClick={() => sendOtp("address", profileForm.phone || addressForm.phone)}
-                  disabled={otpTimer > 0}
-                  className={`mt-6 w-full py-3 rounded-lg text-white font-medium ${
-                    otpTimer > 0 ? "bg-gray-400" : "bg-black hover:bg-gray-800"
-                  }`}
-                >
-                  {otpTimer > 0 ? `Resend in ${otpTimer}s` : "Verify Phone & Save Address"}
-                </button>
-              ) : (
-                <div className="mt-6 space-y-3">
-                  <div className="flex gap-3">
-                    <input
-                      placeholder="Enter OTP"
-                      value={otp}
-                      onChange={e => setOtp(e.target.value.slice(0,6))}
-                      className="flex-1 border rounded-lg px-4 py-2.5"
-                    />
-                    <button
-                      onClick={() => verifyAndSave("address")}
-                      className="bg-green-600 text-white px-7 py-2.5 rounded-lg hover:bg-green-700"
-                    >
-                      Save
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setOtpFor(null);
-                      setOtp("");
-                      setOtpTimer(0);
-                    }}
-                    className="text-gray-600 hover:underline text-sm block"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
+              <button
+                onClick={saveAddress}
+                className="mt-6 w-full py-3 rounded-lg text-white font-medium bg-black hover:bg-gray-800"
+              >
+                Save Address
+              </button>
             </div>
           )}
 
@@ -420,18 +332,15 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {addresses.map(addr => (
-              <div
-                key={addr.id}
-                className="p-5 bg-gray-50 rounded-xl border relative group"
-              >
+            {addresses.map((addr) => (
+              <div key={addr.id} className="p-5 bg-gray-50 rounded-xl border relative group">
                 {editingAddressId !== addr.id ? (
                   <>
                     <p className="font-medium">{addr.address1}</p>
                     {addr.address2 && <p>{addr.address2}</p>}
                     {addr.landmark && <p className="text-sm text-gray-600">Landmark: {addr.landmark}</p>}
                     <p className="mt-1 text-sm">
-                      {addr.city}, {addr.state} — {addr.pincode}
+                      {addr.city}, {addr.state} - {addr.pincode}
                     </p>
                     <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition">
                       <button

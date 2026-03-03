@@ -11,22 +11,16 @@ export default function AddAddress() {
   const [state, setState] = useState("");
   const [pincode, setPincode] = useState("");
   const [phone, setPhone] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [otp, setOtp] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSendOtp = async () => {
-    if (!phone) return alert("Enter phone number");
+  const handleSave = async () => {
+    if (!address1 || !city || !state || !pincode) {
+      alert("Please fill all required address fields");
+      return;
+    }
 
-    await API.post("/auth/send-phone-otp", { phone });
-    alert("OTP sent! Check console for demo");
-    setOtpSent(true);
-  };
-
-  const handleVerifyAndSave = async () => {
-    if (!otp) return alert("Enter OTP");
-
-    await API.post("/auth/verify-phone-otp", { phone, otp });
-
+    setLoading(true);
+    try {
     // Save address
     const { data: user } = await API.get("/auth/user", {
       headers: { Authorization: `Bearer ${token}` },
@@ -42,6 +36,12 @@ export default function AddAddress() {
 
     alert("Address saved successfully!");
     navigate("/profile");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save address");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -85,30 +85,13 @@ export default function AddAddress() {
           className="w-full border px-4 py-3 rounded-lg mb-3"
         />
 
-        {!otpSent ? (
-          <button
-            onClick={handleSendOtp}
-            className="w-full bg-black text-white py-3 rounded-lg mb-3"
-          >
-            Verify Phone
-          </button>
-        ) : (
-          <div className="flex gap-3 mb-3">
-            <input
-              type="text"
-              placeholder="Enter OTP"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value)}
-              className="flex-1 border px-4 py-3 rounded-lg"
-            />
-            <button
-              onClick={handleVerifyAndSave}
-              className="bg-black text-white px-6 rounded-lg"
-            >
-              Save Address
-            </button>
-          </div>
-        )}
+        <button
+          onClick={handleSave}
+          disabled={loading}
+          className="w-full bg-black text-white py-3 rounded-lg mb-3 disabled:bg-gray-500"
+        >
+          {loading ? "Saving..." : "Save Address"}
+        </button>
       </div>
     </div>
   );

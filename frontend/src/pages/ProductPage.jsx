@@ -185,7 +185,7 @@ const ProductPage = () => {
     const cashfree = window.Cashfree({ mode: "sandbox" });
     cashfree.checkout({
       paymentSessionId: sessionId,
-      returnUrl: `${frontendBaseUrl}/payment-status?orderId=${orderId}`,
+      returnUrl: `${frontendBaseUrl}/user-orders/me?orderId=${orderId}`,
     });
   } catch (err) {
     console.error("Buy Now error:", err);
@@ -231,12 +231,12 @@ const ProductPage = () => {
   if (error || !product) return <div className="text-center py-20 text-red-600 font-body">Not found</div>;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12 bg-white min-h-screen">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12 min-h-screen">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16">
         {/* Images + Zoom */}
         <div className="space-y-6">
           <div
-            className="relative overflow-hidden shadow-xl border border-gray-200 bg-white cursor-zoom-in"
+            className="relative overflow-hidden shadow-xl border border-gray-200  cursor-zoom-in"
             onMouseEnter={() => setZoomActive(true)}
             onMouseLeave={() => setZoomActive(false)}
             onMouseMove={handleMouseMove}
@@ -515,7 +515,7 @@ const ProductPage = () => {
         )}
 
         {!hasReviewed && (
-          <div className="mt-12 bg-white p-7 border border-gray-200 shadow-sm">
+          <div className="mt-12 p-7 border border-gray-200 shadow-sm">
             <h3 className="text-xl font-heading mb-5">Write a Review</h3>
             <form onSubmit={handleSubmitReview} className="space-y-6">
               <div>

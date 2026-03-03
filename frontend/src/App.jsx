@@ -11,12 +11,11 @@ import ProductsPage from "./pages/ProductsPage";
 import ProfilePage from "./pages/ProfilePage";
 import SearchResults from "./pages/SearchResults";
 
-// 🔥 Import Auth Pages
+//  Import Auth Pages
 import Signup from "./pages/SignUp";
 import Login from "./pages/Login";
 import AddAddress from "./pages/AddAddress";
 import AddProduct from "./pages/AddProduct";
-import PaymentStatus from "./components/PaymentStatus";
 import ProductList from "./pages/ProductList"
 import CollectionPage from "./pages/CollectionPage";
 import EditProduct from "./components/EditProduct";
@@ -24,7 +23,8 @@ import ResetPassword from "./components/ResetPassword";
 import ForgotPassword from "./components/ForgotPassword";
 import { CartProvider } from "./context/CartContext";
 import TrackOrder from "./components/TrackOrder";
-
+import AboutUs from "./components/AboutUs";
+import ContactUs from "./components/ContactUs";
 import Cart from "./pages/CartPage";
 import Myorders from "./pages/MyOrders";
 import AllOrders from "./pages/AllOrders";
@@ -51,12 +51,13 @@ const App = () => {
         <Route path="/add-address" element={<AddAddress />} />
         <Route path="/user-orders/:userId" element={<Myorders />} />
         <Route path="/add" element={<AddProduct />} />
-        <Route path="/payment-status" element={<PaymentStatus />} />
         <Route path= "/list" element={<ProductList />}/>
         <Route path="/edit/:id" element={<EditProduct />} />
         <Route path="/cart" element={<Cart />}/>
         <Route path="/orders" element={<AllOrders/>}/>
         <Route path="/track-order/:id" element={<TrackOrder/>}/>
+        <Route path='/AboutUs' element={<AboutUs/>}/>
+        <Route path='/ContactUs' element={<ContactUs/>}/>
         {/* 🔐 Auth Routes */}
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />

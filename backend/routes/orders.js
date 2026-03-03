@@ -1,4 +1,3 @@
-// Updated orders.js (with stock update and other post-payment logic in both webhook and verify-payment)
 import express from 'express';
 import sql from '../config/db.js';
 import nodemailer from 'nodemailer';
@@ -6,172 +5,256 @@ import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
-import bodyParser from 'body-parser';
 import jwt from 'jsonwebtoken';
 
 dotenv.config();
+
 const router = express.Router();
 
-// ================= CONFIG =================
-const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID;
-const CASHFREE_SECRET = process.env.CASHFREE_SECRET;
+const cleanEnv = (value) => String(value || '').trim().replace(/^['"]|['"]$/g, '');
+
+const CASHFREE_APP_ID = cleanEnv(process.env.CASHFREE_APP_ID);
+const CASHFREE_SECRET = cleanEnv(process.env.CASHFREE_SECRET);
 const CASHFREE_URL = 'https://sandbox.cashfree.com/pg/orders';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://elite-vault.onrender.com';
-const WEBHOOK_BASE_URL = process.env.WEBHOOK_BASE_URL || '';
+const FRONTEND_URL = cleanEnv(process.env.FRONTEND_URL) || 'https://elite-vault.onrender.com';
+const WEBHOOK_BASE_URL = cleanEnv(process.env.WEBHOOK_BASE_URL);
 
-// iThink Logistics Configuration
-const ITHINK_API_KEY = process.env.ITHINK_API_KEY;
-const ITHINK_SECRET = process.env.ITHINK_SECRET;
-const ITHINK_URL = 'https://apiv2.ithinklogistics.com/v3'; // iThink API v3 endpoint
+const ITHINK_API_KEY = cleanEnv(process.env.ITHINK_API_KEY);
+const ITHINK_SECRET = cleanEnv(process.env.ITHINK_SECRET);
+const ITHINK_URL = 'https://apiv2.ithinklogistics.com/v3';
 
-const SELLER_EMAIL = process.env.SELLER_EMAIL || 'seller@example.com';
+const configuredSellerEmail = cleanEnv(process.env.SELLER_EMAIL);
+const SELLER_EMAIL =
+  !configuredSellerEmail || configuredSellerEmail === 'seller@yourstore.com'
+    ? cleanEnv(process.env.EMAIL_USER) || 'seller@example.com'
+    : configuredSellerEmail;
 
-// Seller pickup address (configure this in your .env)
-const SELLER_PICKUP = {
-  name: process.env.SELLER_NAME || 'Your Store Name',
-  address: process.env.SELLER_ADDRESS || 'Your Store Address',
-  city: process.env.SELLER_CITY || 'Your City',
-  state: process.env.SELLER_STATE || 'Your State',
-  pincode: process.env.SELLER_PINCODE || '123456',
-  phone: process.env.SELLER_PHONE || '9876543210',
-  email: process.env.SELLER_EMAIL || 'seller@example.com'
-};
-
-// ================= RAW BODY FOR WEBHOOK =================
-router.use(bodyParser.json({
-  verify: (req, res, buf) => {
-    req.rawBody = buf.toString();
+function createOrderMailTransporter() {
+  if (process.env.SMTP_HOST && process.env.SMTP_PORT) {
+    return nodemailer.createTransport({
+      host: cleanEnv(process.env.SMTP_HOST),
+      port: Number(cleanEnv(process.env.SMTP_PORT)),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: process.env.SMTP_USER
+        ? {
+            user: cleanEnv(process.env.SMTP_USER),
+            pass: cleanEnv(process.env.SMTP_PASS),
+          }
+        : undefined,
+    });
   }
-}));
 
-// Helper function to create iThink order
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: cleanEnv(process.env.EMAIL_USER), pass: cleanEnv(process.env.EMAIL_PASS) },
+    });
+  }
+
+  return null;
+}
+
+const mailTransporter = createOrderMailTransporter();
+
 async function createIThinkOrder(order, user, product, address) {
   try {
-    // Format: YYYY-MM-DD
     const today = new Date().toISOString().split('T')[0];
-    
-    // Calculate dimensions based on product (you can store these in product table)
-    const weight = product.weight || 0.5; // in kg
-    const length = product.length || 20; // in cm
-    const breadth = product.breadth || 15; // in cm
-    const height = product.height || 10; // in cm
 
-    const iThinkPayload = {
+    const payload = {
       api_key: ITHINK_API_KEY,
       secret: ITHINK_SECRET,
       order: {
         order_id: order.id,
         order_date: today,
-        pickup_location: "store1",
-        channel_id: "website",
+        pickup_location: 'store1',
+        channel_id: 'website',
         comment: `Order for ${product.name}`,
-        
         billing_customer_name: user.name,
         billing_address: address.address1,
         billing_address_2: address.address2 || '',
         billing_city: address.city,
         billing_state: address.state,
         billing_pincode: address.pincode,
-        billing_country: "India",
+        billing_country: 'India',
         billing_email: user.email,
         billing_phone: user.phone,
-        
         shipping_is_billing: true,
-        
-        order_items: [{
-          name: product.name,
-          sku: product.id.substring(0, 20), // SKU should be limited
-          units: order.quantity,
-          selling_price: Number(product.price),
-          discount: 0,
-          tax: 0,
-          hsn: 9983 // Default HSN code, you can add this to product table
-        }],
-        
-        payment_method: "Prepaid",
+        order_items: [
+          {
+            name: product.name,
+            sku: String(product.id).slice(0, 20),
+            units: order.quantity,
+            selling_price: Number(product.price),
+            discount: 0,
+            tax: 0,
+            hsn: product.hsn_code || 9983,
+          },
+        ],
+        payment_method: 'Prepaid',
         shipping_charges: 0,
         giftwrap_charges: 0,
         transaction_charges: 0,
         total_discount: 0,
         sub_total: Number(order.total_price),
-        length: length,
-        breadth: breadth,
-        height: height,
-        weight: weight
-      }
+        length: product.length || 20,
+        breadth: product.breadth || 15,
+        height: product.height || 10,
+        weight: product.weight || 0.5,
+      },
     };
-
-    console.log('📦 iThink Payload:', JSON.stringify(iThinkPayload, null, 2));
 
     const response = await fetch(`${ITHINK_URL}/orders/create/`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(iThinkPayload)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     });
 
     const responseData = await response.json();
-    console.log('📦 iThink Response:', responseData);
 
-    if (responseData.status === 1 || responseData.status === 'success') {
-      // Update order with iThink tracking details
-      const awbNumber = responseData.awb || responseData.shipment_id || responseData.tracking_number;
-      
-      if (awbNumber) {
-        await sql`
-          UPDATE orders 
-          SET shiprocket_order_id = ${awbNumber}, 
-              awb = ${awbNumber},
-              tracking_status = ${'ORDER_CONFIRMED'} 
-          WHERE id = ${order.id}
-        `;
-      }
-
-      return responseData;
-    } else {
-      console.error('❌ iThink order creation failed:', responseData.message || responseData.error);
+    if (!(responseData.status === 1 || responseData.status === 'success')) {
+      console.error('iThink order creation failed:', responseData.message || responseData.error || responseData);
       return null;
     }
+
+    const awbNumber = responseData.awb || responseData.shipment_id || responseData.tracking_number;
+
+    if (awbNumber) {
+      await sql`
+        UPDATE orders
+        SET
+          logistic_order_id = ${String(awbNumber)},
+          awb = ${String(awbNumber)},
+          tracking_status = ${'ORDER_CONFIRMED'}
+        WHERE id = ${order.id}
+      `;
+    }
+
+    return responseData;
   } catch (error) {
-    console.error('❌ iThink order error:', error);
+    console.error('iThink order error:', error);
     return null;
   }
 }
 
-// Helper function to track iThink order
 async function trackIThinkOrder(awbNumber) {
   try {
-    const payload = {
-      api_key: ITHINK_API_KEY,
-      secret: ITHINK_SECRET,
-      awb: awbNumber
-    };
-
     const response = await fetch(`${ITHINK_URL}/orders/track/`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: ITHINK_API_KEY,
+        secret: ITHINK_SECRET,
+        awb: awbNumber,
+      }),
     });
 
-    const data = await response.json();
-    console.log('📦 iThink Track Response:', data);
-    return data;
+    return response.json();
   } catch (error) {
-    console.error('❌ iThink tracking error:', error);
+    console.error('iThink tracking error:', error);
     return null;
   }
 }
 
-// Helper function to handle post-payment success logic (stock update, shipping, emails)
+async function sendOrderEmails(order, user, product, address, shippingMeta) {
+  if (!mailTransporter) {
+    console.warn('Order emails skipped: SMTP or EMAIL env vars are not configured.');
+    return;
+  }
+
+  const awb = shippingMeta?.awb || shippingMeta?.shipment_id || null;
+
+  const trackingHtml = awb
+    ? `
+      <div style="margin: 20px 0; padding: 15px; background-color: #f0f9ff; border-radius: 5px; border-left: 4px solid #C6A75E;">
+        <h3 style="color: #333; margin-top: 0;">Tracking Information</h3>
+        <p><strong>AWB Number:</strong> ${awb}</p>
+        <p><strong>Courier:</strong> ${shippingMeta?.courier_name || 'iThink Logistics'}</p>
+        <p><strong>Status:</strong> Order confirmed and ready for pickup</p>
+      </div>
+    `
+    : '';
+
+  const invoiceHtml = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background-color: #1C1C1C; color: white; padding: 20px; text-align: center;">
+        <h1 style="margin: 0; color: #C6A75E;">Order Confirmed</h1>
+      </div>
+      <div style="padding: 20px;">
+        <h2 style="color: #333; border-bottom: 2px solid #C6A75E; padding-bottom: 10px;">Invoice</h2>
+        <p><strong>Order ID:</strong> ${order.id}</p>
+        <p><strong>Order Date:</strong> ${new Date(order.created_at).toLocaleString('en-IN')}</p>
+        <p><strong>Product:</strong> ${product.name}</p>
+        <p><strong>Quantity:</strong> ${order.quantity}</p>
+        <p><strong>Total:</strong> INR ${order.total_price}</p>
+        ${order.color ? `<p><strong>Color:</strong> ${order.color}</p>` : ''}
+        ${order.size ? `<p><strong>Size:</strong> ${order.size}</p>` : ''}
+        <hr />
+        <p><strong>Shipping Address:</strong></p>
+        <p>${user.name}</p>
+        <p>${address.address1}${address.address2 ? `, ${address.address2}` : ''}</p>
+        <p>${address.city}, ${address.state} - ${address.pincode}</p>
+        <p>Phone: ${user.phone || '-'}</p>
+        ${trackingHtml}
+      </div>
+    </div>
+  `;
+
+  const from =
+    cleanEnv(process.env.ORDER_EMAIL_FROM) ||
+    cleanEnv(process.env.EMAIL_FROM) ||
+    cleanEnv(process.env.EMAIL_USER) ||
+    'no-reply@elitevault.local';
+
+  const tasks = [
+    mailTransporter.sendMail({
+      from,
+      to: user.email,
+      subject: `Order Confirmed: #${String(order.id).slice(0, 8)}`,
+      html: invoiceHtml,
+    }),
+  ];
+
+  if (SELLER_EMAIL) {
+    tasks.push(
+      mailTransporter.sendMail({
+        from,
+        to: SELLER_EMAIL,
+        subject: `New Order Received: #${String(order.id).slice(0, 8)}`,
+        html:
+          invoiceHtml +
+          `
+            <div style="margin-top: 20px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffeeba;">
+              <h3>Admin Information</h3>
+              <p><strong>Buyer Email:</strong> ${user.email}</p>
+              <p><strong>Buyer Phone:</strong> ${user.phone || '-'}</p>
+              <p><strong>Payment Status:</strong> PAID</p>
+            </div>
+          `,
+      })
+    );
+  }
+
+  const results = await Promise.allSettled(tasks);
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      console.log(index === 0 ? 'Buyer email sent' : 'Admin email sent');
+    } else {
+      console.error(index === 0 ? 'Buyer email failed' : 'Admin email failed', result.reason);
+    }
+  });
+}
+
 async function handlePaymentSuccess(orderId) {
   try {
-    // Fetch order, user, product, address
-    const orderRes = await sql`SELECT * FROM orders WHERE id = ${orderId}`;
+    const orderRes = await sql`
+      SELECT * FROM orders
+      WHERE id = ${orderId}
+        AND status = ${'PAID'}
+    `;
     const order = orderRes[0];
-    if (!order) return { success: false, error: 'Order not found' };
+    if (!order) {
+      return { success: false, error: 'Paid order not found' };
+    }
 
     const userRes = await sql`SELECT * FROM users WHERE id = ${order.user_id}`;
     const productRes = await sql`SELECT * FROM products WHERE id = ${order.product_id}`;
@@ -181,9 +264,10 @@ async function handlePaymentSuccess(orderId) {
     const product = productRes[0];
     const address = addressRes[0];
 
-    if (!user || !product || !address) return { success: false, error: 'Missing related data' };
+    if (!user || !product || !address) {
+      return { success: false, error: 'Missing related data for post-processing' };
+    }
 
-    // 1️⃣ Reduce stock quantity (atomic decrement to prevent race conditions)
     const stockUpdateRes = await sql`
       UPDATE products
       SET stock = stock - ${order.quantity}
@@ -192,150 +276,42 @@ async function handlePaymentSuccess(orderId) {
     `;
 
     if (stockUpdateRes.length === 0) {
-      return { success: false, error: 'Insufficient stock or update failed' };
+      return { success: false, error: 'Insufficient stock while finalizing paid order' };
     }
 
-    console.log("✅ Stock updated successfully");
-
-    // 2️⃣ Create iThink Logistics order
-    let iThinkResponse = null;
+    let shippingMeta = null;
     if (ITHINK_API_KEY && ITHINK_SECRET) {
-      iThinkResponse = await createIThinkOrder(order, user, product, address);
-      console.log("📦 iThink Logistics Response:", iThinkResponse);
+      shippingMeta = await createIThinkOrder(order, user, product, address);
     }
 
-    // 3️⃣ Send emails
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-    });
-
-    // Enhanced email content with tracking info
-    const trackingHtml = iThinkResponse?.awb || iThinkResponse?.shipment_id ? `
-      <div style="margin: 20px 0; padding: 15px; background-color: #f0f9ff; border-radius: 5px; border-left: 4px solid #C6A75E;">
-        <h3 style="color: #333; margin-top: 0;">📦 Tracking Information</h3>
-        <p><strong>AWB Number:</strong> ${iThinkResponse.awb || iThinkResponse.shipment_id}</p>
-        <p><strong>Courier:</strong> ${iThinkResponse.courier_name || 'iThink Logistics'}</p>
-        <p><strong>Status:</strong> Order confirmed and ready for pickup</p>
-        <p><strong>Track your order:</strong> <a href="https://www.ithinklogistics.com/track/?awb=${iThinkResponse.awb || iThinkResponse.shipment_id}" style="color: #C6A75E;">Click here to track</a></p>
-      </div>
-    ` : '';
-
-    const invoiceHtml = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background-color: #1C1C1C; color: white; padding: 20px; text-align: center;">
-          <h1 style="margin: 0; color: #C6A75E;">Order Confirmed!</h1>
-        </div>
-        
-        <div style="padding: 20px;">
-          <h2 style="color: #333; border-bottom: 2px solid #C6A75E; padding-bottom: 10px;">Invoice</h2>
-          
-          <div style="margin: 20px 0;">
-            <h3>Order Details</h3>
-            <p><strong>Order ID:</strong> ${order.id}</p>
-            <p><strong>Order Date:</strong> ${new Date(order.created_at).toLocaleDateString('en-IN', {
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            })}</p>
-          </div>
-          
-          <div style="margin: 20px 0; background-color: #f9f9f9; padding: 15px; border-radius: 5px;">
-            <h3 style="margin-top: 0;">Product Details</h3>
-            <table style="width: 100%; border-collapse: collapse;">
-              <tr>
-                <td><strong>Product:</strong></td>
-                <td>${product.name}</td>
-              </tr>
-              <tr>
-                <td><strong>Quantity:</strong></td>
-                <td>${order.quantity}</td>
-              </tr>
-              ${order.color ? `<tr><td><strong>Color:</strong></td><td>${order.color}</td></tr>` : ''}
-              ${order.size ? `<tr><td><strong>Size:</strong></td><td>${order.size}</td></tr>` : ''}
-              <tr>
-                <td><strong>Unit Price:</strong></td>
-                <td>₹${product.price}</td>
-              </tr>
-              <tr>
-                <td><strong>Total Amount:</strong></td>
-                <td><strong>₹${order.total_price}</strong></td>
-              </tr>
-            </table>
-          </div>
-          
-          <div style="margin: 20px 0;">
-            <h3>Shipping Address</h3>
-            <p><strong>${user.name}</strong></p>
-            <p>${address.address1}${address.address2 ? ', ' + address.address2 : ''}</p>
-            <p>${address.landmark ? address.landmark + ', ' : ''}${address.city}, ${address.state} - ${address.pincode}</p>
-            <p>Phone: ${user.phone}</p>
-          </div>
-          
-          ${trackingHtml}
-          
-          <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 5px; text-align: center;">
-            <p style="margin: 0;">Thank you for shopping with us!</p>
-            <p style="margin: 10px 0 0; color: #666; font-size: 14px;">We hope you enjoy your purchase.</p>
-          </div>
-        </div>
-      </div>
-    `;
-
-    try {
-      // 1️⃣ Send to buyer
-      await transporter.sendMail({
-        from: `"Your Store" <${process.env.EMAIL_USER}>`,
-        to: user.email,
-        subject: `Order Confirmed: #${order.id.slice(0, 8)}`,
-        html: invoiceHtml,
-      });
-      console.log("✅ Buyer email sent");
-
-      // 2️⃣ Send to merchant/seller
-      await transporter.sendMail({
-        from: `"Your Store" <${process.env.EMAIL_USER}>`,
-        to: SELLER_EMAIL,
-        subject: 'New Order Received',
-        html: invoiceHtml + `
-          <div style="margin-top: 20px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffeeba;">
-            <h3>Admin Information</h3>
-            <p><strong>Buyer Phone:</strong> ${user.phone}</p>
-            <p><strong>Payment Status:</strong> PAID</p>
-            <p><strong>Shipping Status:</strong> ${iThinkResponse ? 'iThink order created: ' + (iThinkResponse.awb || iThinkResponse.shipment_id) : 'Pending'}</p>
-          </div>
-        `,
-      });
-      console.log("✅ Seller email sent");
-
-    } catch (emailErr) {
-      console.error("❌ Email sending failed:", emailErr);
-    }
+    await sendOrderEmails(order, user, product, address, shippingMeta);
 
     return { success: true };
   } catch (err) {
-    console.error('❌ handlePaymentSuccess error:', err);
+    console.error('handlePaymentSuccess error:', err);
     return { success: false, error: err.message };
   }
 }
 
-// ---------------- CREATE PAYMENT SESSION ----------------
+function runPostProcessingInBackground(orderId) {
+  setImmediate(async () => {
+    const result = await handlePaymentSuccess(orderId);
+    if (!result.success) {
+      console.error('Post-payment processing failed:', result.error);
+    }
+  });
+}
+
 router.post('/create-session', async (req, res) => {
   try {
     const { productId, total_price, userId, addressId, quantity, color, size } = req.body;
 
-    if (!productId || !total_price || !userId || !addressId) {
-      return res.status(400).json({ error: "Missing required fields" });
+    if (!productId || !total_price || !userId || !addressId || !quantity) {
+      return res.status(400).json({ error: 'Missing required fields' });
     }
 
     const orderId = uuidv4();
-    console.log("🔥 FRONTEND_URL used:", FRONTEND_URL);
-    console.log("🔥 Return URL being sent:",
-    `${FRONTEND_URL}/payment-status?orderId=${orderId}`
-    );
-    // Fetch user, product, address
+
     const userRes = await sql`SELECT * FROM users WHERE id = ${userId}`;
     const productRes = await sql`SELECT * FROM products WHERE id = ${productId}`;
     const addressRes = await sql`
@@ -350,20 +326,20 @@ router.post('/create-session', async (req, res) => {
     const user = userRes[0];
     const product = productRes[0];
 
-    // Check stock availability
     if (product.stock < quantity) {
       return res.status(400).json({ error: 'Insufficient stock' });
     }
 
-    // Create Cashfree payment session
+    const resolvedWebhookBaseUrl = WEBHOOK_BASE_URL || `${req.protocol}://${req.get('host')}`;
+
     const cashfreePayload = {
       order_id: orderId,
       order_amount: Number(total_price),
       order_currency: 'INR',
       order_meta: {
-        return_url: `${FRONTEND_URL}/payment-status?orderId=${orderId}`,
-        ...(WEBHOOK_BASE_URL
-          ? { notify_url: `${WEBHOOK_BASE_URL}/api/orders/cashfree-webhook` }
+        return_url: `${FRONTEND_URL}/user-orders/me?orderId=${orderId}`,
+        ...(resolvedWebhookBaseUrl
+          ? { notify_url: `${resolvedWebhookBaseUrl}/orders/cashfree-webhook` }
           : {}),
       },
       customer_details: {
@@ -387,7 +363,7 @@ router.post('/create-session', async (req, res) => {
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error("❌ Cashfree error:", errText);
+      console.error('Cashfree create order failed:', errText);
       return res.status(500).json({ error: 'Cashfree API failed' });
     }
 
@@ -411,49 +387,33 @@ router.post('/create-session', async (req, res) => {
         ${color || null},
         ${size || null}
       )
-      RETURNING id
     `;
 
     res.json({ sessionId: data.payment_session_id, orderId });
-
   } catch (err) {
-    console.error("❌ Create session error:", err);
+    console.error('Create session error:', err);
     res.status(500).json({ error: 'Error creating session' });
   }
 });
 
-// ---------------- CASHFREE WEBHOOK ----------------
 router.post('/cashfree-webhook', async (req, res) => {
   try {
-    console.log("🔥 CASHFREE WEBHOOK HIT", {
-      body: req.body,
-      headers: req.headers
-    });
-
     const signature = req.headers['x-webhook-signature'];
     const timestamp = req.headers['x-webhook-timestamp'];
     const rawBody = req.rawBody || JSON.stringify(req.body);
 
-    console.log("🔑 Raw Body:", rawBody);
-    console.log("🔑 Received Signature:", signature);
+    if (!signature || !timestamp) {
+      return res.status(400).json({ error: 'Missing webhook signature headers' });
+    }
 
-    // Verify signature
-    const computedSignature = crypto.createHmac('sha256', CASHFREE_SECRET)
-      .update(timestamp + rawBody)
-      .digest('base64');
-
-    console.log("🔑 Computed Signature:", computedSignature);
+    const computedSignature = crypto.createHmac('sha256', CASHFREE_SECRET).update(timestamp + rawBody).digest('base64');
 
     if (signature !== computedSignature) {
-      console.warn("❌ Invalid signature");
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
     const payload = req.body || {};
-    const webhookOrderId =
-      payload.order_id ||
-      payload?.data?.order?.order_id ||
-      payload?.data?.payment?.order_id;
+    const webhookOrderId = payload.order_id || payload?.data?.order?.order_id || payload?.data?.payment?.order_id;
     const webhookPaymentStatus = (
       payload.payment_status ||
       payload.order_status ||
@@ -462,69 +422,62 @@ router.post('/cashfree-webhook', async (req, res) => {
       ''
     ).toUpperCase();
 
-    console.log("📦 Webhook Parsed Order ID:", webhookOrderId);
-    console.log("📦 Webhook Parsed Status:", webhookPaymentStatus);
+    if (!webhookOrderId) {
+      return res.status(400).json({ error: 'Missing order id in webhook payload' });
+    }
 
-    // Only proceed for successful payments
     if (!['PAID', 'SUCCESS'].includes(webhookPaymentStatus)) {
-      console.log("⚠️ Payment not completed:", webhookPaymentStatus);
-      return res.sendStatus(200);
+      return res.status(200).json({ message: 'Ignored non-success payment event' });
     }
 
-    // Check if the order already has a PAID status
-    const existingOrderRes = await sql`
-      SELECT status FROM orders WHERE id = ${webhookOrderId}
-    `;
-
-    console.log("🔍 Existing Order Query Result:", existingOrderRes);
-
-    if (existingOrderRes.length === 0) {
-      console.warn("❌ Order not found:", webhookOrderId);
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    const existingStatus = existingOrderRes[0].status;
-    console.log("🔍 Existing Order Status:", existingStatus);
-
-    if ((existingStatus || '').toUpperCase() === 'PAID') {
-      console.log("⚠️ Order already marked as PAID:", webhookOrderId);
-      return res.status(200).json({ message: 'Order already paid' });
-    }
-
-    // Update order status
-    const orderRes = await sql`
+    const updateRes = await sql`
       UPDATE orders
       SET status = ${'PAID'}
       WHERE id = ${webhookOrderId}
-      RETURNING *
+        AND status <> ${'PAID'}
+      RETURNING id, status
     `;
 
-    console.log("✅ Order Update Query Result:", orderRes);
-
-    const order = orderRes[0];
-    if (!order) {
-      console.error("❌ Failed to update order status:", webhookOrderId);
-      return res.status(500).json({ error: 'Failed to update order status' });
+    if (updateRes.length === 0) {
+      return res.status(200).json({ message: 'Order already PAID or not found' });
     }
 
-    console.log("✅ Order status updated to PAID for order_id:", webhookOrderId);
-
-    // Handle post-payment logic (stock, shipping, emails)
-    const result = await handlePaymentSuccess(webhookOrderId);
-    if (!result.success) {
-      console.error("❌ Post-payment processing failed:", result.error);
-      // Note: You may want to queue this for retry, but for now, log and continue
-    }
-
-    res.status(200).json({ message: 'Webhook processed successfully' });
-
+    res.status(200).json({ message: 'Webhook accepted' });
+    runPostProcessingInBackground(webhookOrderId);
   } catch (err) {
-    console.error("❌ Webhook error:", err);
+    console.error('Webhook error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// ---------------- VERIFY PAYMENT (FALLBACK) ----------------
+// Fast order status endpoint (DB only)
+router.get('/status/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const orderRes = await sql`
+      SELECT id, status, created_at
+      FROM orders
+      WHERE id = ${orderId}
+    `;
+
+    if (orderRes.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const order = orderRes[0];
+    res.json({
+      orderId: order.id,
+      status: (order.status || 'PENDING').toUpperCase(),
+      paid: (order.status || '').toUpperCase() === 'PAID',
+    });
+  } catch (err) {
+    console.error('Status endpoint error:', err);
+    res.status(500).json({ error: 'Error fetching order status' });
+  }
+});
+
+// Gateway fallback verifier
 router.get('/verify-payment/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -541,7 +494,7 @@ router.get('/verify-payment/:orderId', async (req, res) => {
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error("❌ Cashfree verify API failed:", errText);
+      console.error('Cashfree verify API failed:', errText);
       return res.status(502).json({ error: 'Unable to verify payment from gateway' });
     }
 
@@ -554,35 +507,24 @@ router.get('/verify-payment/:orderId', async (req, res) => {
       return res.json({ paid: false, status: 'PENDING' });
     }
 
-    // Update status if not already PAID
     const updateRes = await sql`
       UPDATE orders
       SET status = ${'PAID'}
-      WHERE id = ${orderId} AND status <> ${'PAID'}
-      RETURNING *
+      WHERE id = ${orderId}
+        AND status <> ${'PAID'}
+      RETURNING id
     `;
 
     if (updateRes.length > 0) {
-      console.log("✅ Order status updated to PAID via fallback for order_id:", orderId);
-      
-      // Handle post-payment logic (stock, shipping, emails) only if status was updated
-      const result = await handlePaymentSuccess(orderId);
-      if (!result.success) {
-        console.error("❌ Post-payment processing failed in fallback:", result.error);
-        // Note: You may want to handle this differently, e.g., return error but still confirm payment
-      }
-    } else {
-      console.log("⚠️ Order already PAID, skipping post-processing");
+      runPostProcessingInBackground(orderId);
     }
-
     res.json({ paid: true, status: 'PAID' });
   } catch (err) {
-    console.error("❌ Verify payment error:", err);
+    console.error('Verify payment error:', err);
     res.status(500).json({ error: 'Error verifying payment' });
   }
 });
 
-// ---------------- TRACK ORDER ----------------
 router.get('/track/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -609,26 +551,18 @@ router.get('/track/:orderId', async (req, res) => {
 
     const order = orderRes[0];
 
-    // Get tracking info from iThink if AWB exists
     let trackingInfo = null;
     if (order.awb && ITHINK_API_KEY && ITHINK_SECRET) {
       trackingInfo = await trackIThinkOrder(order.awb);
     }
 
-    res.json({
-      order: order,
-      tracking: trackingInfo
-    });
-
+    res.json({ order, tracking: trackingInfo });
   } catch (err) {
-    console.error('❌ Track order error:', err);
+    console.error('Track order error:', err);
     res.status(500).json({ error: 'Error tracking order' });
   }
 });
-// ────────────────────────────────────────────────
-//  GET CURRENT USER'S ORDERS (/api/orders/user/me)
-// ────────────────────────────────────────────────
-// Preferred route – no :userId in URL
+
 router.get('/user/me', async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -638,17 +572,17 @@ router.get('/user/me', async (req, res) => {
     const userId = decoded.id;
 
     const orders = await sql`
-      SELECT 
-        o.*, 
-        p.name AS product_name, 
+      SELECT
+        o.*,
+        p.name AS product_name,
         p.image_urls,
-        a.city, 
+        a.city,
         a.state
       FROM orders o
       JOIN products p ON o.product_id = p.id
       LEFT JOIN addresses a ON o.address_id = a.id
       WHERE o.user_id = ${userId}
-      AND o.status = 'PAID'
+      AND UPPER(o.status) = 'PAID'
       ORDER BY o.created_at DESC
     `;
 
@@ -661,16 +595,11 @@ router.get('/user/me', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-// ────────────────────────────────────────────────
-//  GET ALL ORDERS – ADMIN ONLY (/api/orders/all)
-// ────────────────────────────────────────────────
+
 router.get('/all', async (req, res) => {
   try {
-    // TODO: Add proper admin middleware check in production
-    // For now: anyone with valid token can access (demo only)
-
     const result = await sql`
-      SELECT 
+      SELECT
         o.id, o.user_id, o.product_id, o.quantity, o.total_price,
         o.status, o.created_at, o.awb, o.color, o.size,
         p.name AS product_name, p.image_urls,

@@ -3,29 +3,70 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
-import sql from '../config/db.js';           // ← Neon serverless driver
+import sql from '../config/db.js';
 
 dotenv.config();
 
 const router = express.Router();
+const cleanEnv = (value) => String(value || '').trim().replace(/^['"]|['"]$/g, '');
+
+function getTokenFromHeader(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return null;
+  return authHeader.split(' ')[1];
+}
+
+function getTransporter() {
+  if (process.env.SMTP_HOST && process.env.SMTP_PORT) {
+    return nodemailer.createTransport({
+      host: cleanEnv(process.env.SMTP_HOST),
+      port: Number(cleanEnv(process.env.SMTP_PORT)),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: process.env.SMTP_USER
+        ? {
+            user: cleanEnv(process.env.SMTP_USER),
+            pass: cleanEnv(process.env.SMTP_PASS),
+          }
+        : undefined,
+    });
+  }
+
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: cleanEnv(process.env.EMAIL_USER),
+        pass: cleanEnv(process.env.EMAIL_PASS),
+      },
+    });
+  }
+
+  return null;
+}
 
 // SIGNUP
 router.post('/signup', async (req, res) => {
   try {
     const { name, email, password, phone } = req.body;
 
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are required' });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const [result] = await sql`
       INSERT INTO users (name, email, password, phone)
-      VALUES (${name}, ${email}, ${hashedPassword}, ${phone})
+      VALUES (${name}, ${email}, ${hashedPassword}, ${phone || null})
       RETURNING id, name, email, phone
     `;
 
     res.status(201).json(result);
   } catch (err) {
     console.error(err);
-    // You might want to check if it's unique violation → 409 Conflict
+    if (err?.code === '23505') {
+      return res.status(409).json({ error: 'Email already exists' });
+    }
     res.status(500).json({ error: 'Error creating user' });
   }
 });
@@ -36,7 +77,7 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
     const [user] = await sql`
-      SELECT * FROM users 
+      SELECT * FROM users
       WHERE email = ${email}
     `;
 
@@ -49,8 +90,8 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid email or password' });
     }
 
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { 
-      expiresIn: '1h' 
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
+      expiresIn: '1h',
     });
 
     res.json({ token });
@@ -60,7 +101,6 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// LOGOUT (client-side only – no server action needed unless using token blacklist)
 router.post('/logout', (req, res) => {
   res.json({ message: 'Logged out successfully' });
 });
@@ -68,17 +108,16 @@ router.post('/logout', (req, res) => {
 // GET CURRENT USER
 router.get('/user', async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
+    const token = getTokenFromHeader(req);
+    if (!token) {
       return res.status(401).json({ error: 'No token provided' });
     }
 
-    const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const [user] = await sql`
-      SELECT id, name, email, phone 
-      FROM users 
+      SELECT id, name, email, phone
+      FROM users
       WHERE id = ${decoded.id}
     `;
 
@@ -93,36 +132,79 @@ router.get('/user', async (req, res) => {
   }
 });
 
+// UPDATE CURRENT USER
+router.put('/update-user', async (req, res) => {
+  try {
+    const token = getTokenFromHeader(req);
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const { name, email, phone, password } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({ error: 'Name and email are required' });
+    }
+
+    let hashedPassword = null;
+    if (password?.trim()) {
+      hashedPassword = await bcrypt.hash(password, 10);
+    }
+
+    const [updated] = await sql`
+      UPDATE users
+      SET
+        name = ${name},
+        email = ${email},
+        phone = ${phone || null},
+        password = COALESCE(${hashedPassword}, password)
+      WHERE id = ${decoded.id}
+      RETURNING id, name, email, phone
+    `;
+
+    if (!updated) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    if (err?.code === '23505') {
+      return res.status(409).json({ error: 'Email already exists' });
+    }
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
 // FORGOT PASSWORD
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
 
     const [user] = await sql`
-      SELECT id FROM users 
+      SELECT id FROM users
       WHERE email = ${email}
     `;
 
-    // Always return same message (security best practice)
     if (!user) {
       return res.json({ message: 'If the email exists, a reset link has been sent.' });
     }
 
-    const resetToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { 
-      expiresIn: '1h' 
+    const resetToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
+      expiresIn: '1h',
     });
 
-    const resetLink = `http://localhost:5173/reset-password/${resetToken}`;
+    const resetLink = `${process.env.FRONTEND_URL}reset-password/${resetToken}`;
+    const transporter = getTransporter();
 
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
-    });
+    if (!transporter) {
+      console.warn('Password reset email not sent: SMTP or EMAIL env vars are not configured.');
+      return res.json({ message: 'If the email exists, a reset link has been sent.' });
+    }
 
     await transporter.sendMail({
+      from: cleanEnv(process.env.EMAIL_FROM) || cleanEnv(process.env.EMAIL_USER) || 'no-reply@elitevault.local',
       to: email,
       subject: 'Password Reset Request',
       html: `
@@ -131,7 +213,7 @@ router.post('/forgot-password', async (req, res) => {
         <a href="${resetLink}">${resetLink}</a>
         <p>This link will expire in 1 hour.</p>
         <p>If you did not request this, please ignore this email.</p>
-      `
+      `,
     });
 
     res.json({ message: 'If the email exists, a reset link has been sent.' });
@@ -148,11 +230,10 @@ router.post('/reset-password/:token', async (req, res) => {
     const { newPassword } = req.body;
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     await sql`
-      UPDATE users 
+      UPDATE users
       SET password = ${hashedPassword}
       WHERE id = ${decoded.id}
     `;
@@ -164,19 +245,20 @@ router.post('/reset-password/:token', async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────
-//               Address endpoints
-// ─────────────────────────────────────────────
-
+// ADDRESS ENDPOINTS
 router.post('/address', async (req, res) => {
   try {
     const { userId, address1, address2, landmark, city, state, pincode } = req.body;
 
+    if (!userId || !address1 || !city || !state || !pincode) {
+      return res.status(400).json({ error: 'Missing required address fields' });
+    }
+
     const [newAddress] = await sql`
-      INSERT INTO addresses 
+      INSERT INTO addresses
         (user_id, address1, address2, landmark, city, state, pincode)
-      VALUES 
-        (${userId}, ${address1}, ${address2}, ${landmark}, ${city}, ${state}, ${pincode})
+      VALUES
+        (${userId}, ${address1}, ${address2 || null}, ${landmark || null}, ${city}, ${state}, ${pincode})
       RETURNING *
     `;
 
@@ -196,8 +278,9 @@ router.get('/address/:userId', async (req, res) => {
     }
 
     const addresses = await sql`
-      SELECT * FROM addresses 
+      SELECT * FROM addresses
       WHERE user_id = ${userId}
+      ORDER BY created_at DESC
     `;
 
     res.json(addresses);
@@ -214,10 +297,10 @@ router.put('/address/:id', async (req, res) => {
 
     const [updated] = await sql`
       UPDATE addresses
-      SET 
+      SET
         address1 = ${address1},
-        address2 = ${address2},
-        landmark = ${landmark},
+        address2 = ${address2 || null},
+        landmark = ${landmark || null},
         city     = ${city},
         state    = ${state},
         pincode  = ${pincode}
@@ -233,52 +316,6 @@ router.put('/address/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error updating address' });
-  }
-});
-
-// ─────────────────────────────────────────────
-//               Phone OTP (demo implementation)
-// ─────────────────────────────────────────────
-
-router.post('/send-phone-otp', async (req, res) => {
-  try {
-    const { phone } = req.body;
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-    global.phoneOtps = global.phoneOtps || {};
-    global.phoneOtps[phone] = otp;
-
-    console.log(`OTP for ${phone}: ${otp}`); // ← remove in production!
-
-    // TODO: Integrate real SMS provider (Twilio, MSG91, etc.)
-
-    res.json({ message: 'OTP sent successfully' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to send OTP' });
-  }
-});
-
-router.post('/verify-phone-otp', async (req, res) => {
-  try {
-    const { phone, otp } = req.body;
-
-    if (!global.phoneOtps?.[phone] || global.phoneOtps[phone] !== otp) {
-      return res.status(400).json({ error: 'Invalid OTP' });
-    }
-
-    await sql`
-      UPDATE users 
-      SET phone_verified = true 
-      WHERE phone = ${phone}
-    `;
-
-    delete global.phoneOtps[phone];
-
-    res.json({ message: 'Phone verified successfully' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Verification failed' });
   }
 });
 

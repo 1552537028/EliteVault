@@ -54,7 +54,7 @@ const Products = () => {
             <h2 className="text-[#1C1C1C] font-heading text-lg mb-2">
               {item.name}
             </h2>
-            <p className="text-gray-500 text-sm mb-4">{item.description}</p>
+            <p className="text-gray-500 text-sm mb-4">{item.description?.slice(0, 100)}...</p>
             <p className="text-[#1c1c1c] font-body text-lg">₹{item.price}</p>
           </Link>
         ))}

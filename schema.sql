@@ -54,6 +54,7 @@ CREATE TABLE orders (
   logistic_order_id VARCHAR(255),
   awb                 VARCHAR(100),
   tracking_status     VARCHAR(100),
+  post_processed_at   TIMESTAMP,
   created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -82,3 +83,11 @@ CREATE TABLE IF NOT EXISTS reviews (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(product_id, user_id)   -- one review per user per product
 );
+
+-- Performance indexes for high-traffic reads/writes
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+CREATE INDEX IF NOT EXISTS idx_addresses_user_id ON addresses(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_user_created ON orders(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_product_id ON orders(product_id);
+CREATE INDEX IF NOT EXISTS idx_orders_post_processed ON orders(post_processed_at);

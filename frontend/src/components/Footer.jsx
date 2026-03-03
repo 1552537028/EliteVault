@@ -1,5 +1,6 @@
+"use client"
 import React from "react";
-
+import { Link } from "react-router-dom";
 const Footer = () => {
   return (
     <footer className="bg-gradient-to-b from-[#111111] to-[#1A1A1A] text-[#F8F6F2]">
@@ -21,10 +22,9 @@ const Footer = () => {
           <div>
             <h3 className="font-heading text-lg mb-4">Quick Links</h3>
             <ul className="space-y-2 font-body text-sm text-[#F8F6F2]/80">
-              <li className="hover:text-white transition-colors cursor-pointer">Home</li>
-              <li className="hover:text-white transition-colors cursor-pointer">About</li>
-              <li className="hover:text-white transition-colors cursor-pointer">Services</li>
-              <li className="hover:text-white transition-colors cursor-pointer">Contact</li>
+              <li><Link to="/" className="hover:text-white transition-colors cursor-pointer">Home</Link></li>
+              <li><Link to="/AboutUs" className="hover:text-white transition-colors cursor-pointer">About</Link></li>
+              <li><Link to="/ContactUs" className="hover:text-white transition-colors cursor-pointer">Contact</Link></li>
             </ul>
           </div>
 
@@ -32,10 +32,10 @@ const Footer = () => {
           <div>
             <h3 className="font-heading text-lg mb-4">Contact</h3>
             <p className="font-body text-sm text-[#F8F6F2]/80">
-              hello@elite-vault.com
+              elitevaultmen@gmail.com
             </p>
             <p className="font-body text-sm text-[#F8F6F2]/80 mt-2">
-              +91 98765 43210
+              +91 95426 01625
             </p>
           </div>
         </div>
