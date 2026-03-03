@@ -186,43 +186,32 @@ router.post('/forgot-password', async (req, res) => {
       SELECT id FROM users
       WHERE email = ${email}
     `;
+    console.log('User query result:', user);
 
     if (!user) {
       return res.json({ message: 'If the email exists, a reset link has been sent.' });
     }
 
-    const resetToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
-      expiresIn: '1h',
-    });
+    const resetToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    console.log('Reset token generated');
 
     const resetLink = `${process.env.FRONTEND_URL}reset-password/${resetToken}`;
     const transporter = getTransporter();
-
-    if (!transporter) {
-      console.warn('Password reset email not sent: SMTP or EMAIL env vars are not configured.');
-      return res.json({ message: 'If the email exists, a reset link has been sent.' });
-    }
+    console.log('Transporter:', transporter ? 'configured' : 'not configured');
 
     await transporter.sendMail({
-      from: cleanEnv(process.env.EMAIL_FROM) || cleanEnv(process.env.EMAIL_USER) || 'no-reply@elitevault.local',
+      from: process.env.EMAIL_USER,
       to: email,
       subject: 'Password Reset Request',
-      html: `
-        <p>You requested a password reset.</p>
-        <p>Click the link below to reset your password:</p>
-        <a href="${resetLink}">${resetLink}</a>
-        <p>This link will expire in 1 hour.</p>
-        <p>If you did not request this, please ignore this email.</p>
-      `,
+      html: `<a href="${resetLink}">${resetLink}</a>`,
     });
 
     res.json({ message: 'If the email exists, a reset link has been sent.' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error processing request' });
+    console.error('Forgot-password error:', err);
+    res.status(500).json({ error: 'Error processing request', details: err.message });
   }
 });
-
 // RESET PASSWORD
 router.post('/reset-password/:token', async (req, res) => {
   try {
