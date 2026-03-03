@@ -181,15 +181,18 @@ router.put('/update-user', async (req, res) => {
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
+    console.log('Forgot password request for:', email);
 
-    const [user] = await sql`
-      SELECT id FROM users
-      WHERE email = ${email}
-    `;
-    console.log('User query result:', user);
+    const [user] = await sql`SELECT id FROM users WHERE email = ${email}`;
+    console.log('DB query result:', user);
 
     if (!user) {
       return res.json({ message: 'If the email exists, a reset link has been sent.' });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET missing!');
+      return res.status(500).json({ error: 'Server misconfiguration' });
     }
 
     const resetToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
@@ -197,7 +200,12 @@ router.post('/forgot-password', async (req, res) => {
 
     const resetLink = `${process.env.FRONTEND_URL}reset-password/${resetToken}`;
     const transporter = getTransporter();
-    console.log('Transporter:', transporter ? 'configured' : 'not configured');
+    console.log('Transporter:', transporter ? 'ok' : 'not configured');
+
+    if (!transporter) {
+      console.warn('No transporter available');
+      return res.json({ message: 'If the email exists, a reset link has been sent.' });
+    }
 
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
@@ -206,6 +214,7 @@ router.post('/forgot-password', async (req, res) => {
       html: `<a href="${resetLink}">${resetLink}</a>`,
     });
 
+    console.log('Email sent successfully');
     res.json({ message: 'If the email exists, a reset link has been sent.' });
   } catch (err) {
     console.error('Forgot-password error:', err);
