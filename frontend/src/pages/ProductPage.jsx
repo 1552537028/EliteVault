@@ -19,13 +19,11 @@ const ProductPage = () => {
   const [selectedColor, setSelectedColor] = useState("");
   const [selectedSize, setSelectedSize] = useState("");
 
-  // Review form
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
   const [hasReviewed, setHasReviewed] = useState(false);
 
-  // UI states
   const [zoomActive, setZoomActive] = useState(false);
   const [zoomPosition, setZoomPosition] = useState({ x: 0, y: 0 });
   const [showSizeGuide, setShowSizeGuide] = useState(false);
@@ -36,7 +34,6 @@ const ProductPage = () => {
   useEffect(() => {
   const fetchData = async () => {
     try {
-      // Product (must succeed)
       const { data: prodData } = await API.get(`/products/product/${id}`);
       setProduct(prodData);
 
@@ -44,21 +41,17 @@ const ProductPage = () => {
       if (prodData.colors?.length) setSelectedColor(prodData.colors[0]);
       if (prodData.sizes?.length) setSelectedSize(prodData.sizes[0]);
 
-      // Related products
       if (prodData.category) {
         const { data: relData } = await API.get(`/products/category/${prodData.category}`);
         setRelatedProducts(relData.filter(p => p.id !== id).slice(0, 4));
       }
 
-      // Reviews (optional)
       try {
         const { data: revData } = await API.get(`/reviews/${id}`);
         setReviews(revData);
       } catch (err) {
         console.warn("Failed to fetch reviews:", err);
       }
-
-      // User review check (optional, may fail with 403)
       const token = localStorage.getItem("token");
       if (token) {
         try {
@@ -71,10 +64,10 @@ const ProductPage = () => {
         }
       }
 
-      setError(null); // reset error if product loaded
+      setError(null); 
     } catch (err) {
       console.error(err);
-      setError(err.message); // only set error if product itself fails
+      setError(err.message); 
     } finally {
       setLoading(false);
     }
@@ -83,7 +76,6 @@ const ProductPage = () => {
   fetchData();
 }, [id]);
 
-  // Price calculation – offer is DISCOUNT PERCENTAGE
   const salePrice = Number(product?.price || 0);
 
   let originalPrice = null;
@@ -94,7 +86,6 @@ const ProductPage = () => {
     originalPrice = Math.round(salePrice / (1 - product.offer / 100));
   }
 
-  // Zoom handlers
   const handleMouseMove = (e) => {
     if (!zoomActive || !imageRef.current) return;
     const rect = imageRef.current.getBoundingClientRect();
@@ -103,7 +94,6 @@ const ProductPage = () => {
     setZoomPosition({ x, y });
   };
 
-  // Quantity controls
   const handleQuantityChange = (e) => {
     const val = parseInt(e.target.value, 10);
     if (!isNaN(val) && val >= 1 && val <= (product?.stock || 1)) {
@@ -119,7 +109,6 @@ const ProductPage = () => {
     if (quantity > 1) setQuantity(q => q - 1);
   };
 
-  // Add to Cart
   const handleAddToCart = () => {
     if (!product) return;
     if (product.colors?.length > 0 && !selectedColor) return;
@@ -134,7 +123,6 @@ const ProductPage = () => {
     });
   };
 
-  // Buy Now
   const handleBuyNow = async () => {
   if (!product) return;
   if (product.colors?.length > 0 && !selectedColor) return;
@@ -145,18 +133,15 @@ const ProductPage = () => {
   if (!token) return navigate("/login");
 
   try {
-    // Get user
     const { data: user } = await API.get("/auth/user", {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    // Get addresses
     const { data: addresses } = await API.get(`/auth/address/${user.id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!addresses.length) return navigate("/profile");
 
-    // Create payment session
     const { data: paymentData } = await API.post(
       "/orders/create-session",
       {
@@ -173,7 +158,6 @@ const ProductPage = () => {
 
     const { sessionId, orderId } = paymentData;
 
-    // Load Cashfree SDK
     await new Promise((res) => {
       if (window.Cashfree) return res();
       const script = document.createElement("script");
@@ -192,7 +176,6 @@ const ProductPage = () => {
   }
 };
 
-  // Submit Review
   const handleSubmitReview = async (e) => {
     e.preventDefault();
     if (rating < 1 || rating > 5) return;
@@ -221,7 +204,6 @@ const ProductPage = () => {
       setRating(0);
       setComment("");
     } catch (err) {
-      // Handle error
     } finally {
       setSubmittingReview(false);
     }
@@ -233,7 +215,6 @@ const ProductPage = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12 min-h-screen">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16">
-        {/* Images + Zoom */}
         <div className="space-y-6">
           <div
             className="relative overflow-hidden shadow-xl border border-gray-200  cursor-zoom-in"
@@ -272,14 +253,13 @@ const ProductPage = () => {
           )}
         </div>
 
-        {/* Product Info */}
         <div className="space-y-7">
           <div>
             <h1 className="text-3xl lg:text-4xl font-heading text-gray-900">{product.name}</h1>
           </div>
 
           <div className="flex items-center gap-4 flex-wrap">
-            <span className="text-4xl lg:text-5xl font-heading text-gray-900">
+            <span className="text-4xl lg:text-5xl font-body text-gray-900">
               ₹{salePrice.toFixed(0)}
             </span>
 
@@ -299,7 +279,6 @@ const ProductPage = () => {
             <p className="text-red-600 font-body text-lg">Out of stock</p>
           ) : null}
 
-          {/* Color */}
           {product.colors?.length > 0 && (
             <div className="space-y-3">
               <label className="block text-lg font-heading text-gray-900">Color</label>
@@ -325,7 +304,6 @@ const ProductPage = () => {
             </div>
           )}
 
-          {/* Size */}
           {product.sizes?.length > 0 && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -355,7 +333,6 @@ const ProductPage = () => {
             </div>
           )}
 
-          {/* Quantity */}
           <div className="space-y-3">
             <label className="block text-lg font-heading text-gray-900">Quantity</label>
             <div className="flex items-center gap-5">
@@ -384,12 +361,11 @@ const ProductPage = () => {
                 </button>
               </div>
               <span className="text-gray-600 font-body">
-                {product.stock > 0 ? `${product.stock} in stock` : "Out of stock"}
+                {product.stock > 0 ? `` : "Out of stock"}
               </span>
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex flex-col sm:flex-row gap-4 pt-4">
             <button
               onClick={handleBuyNow}
@@ -407,7 +383,6 @@ const ProductPage = () => {
             </button>
           </div>
 
-          {/* Description */}
           {product.description && (
             <div className="pt-8 border-t border-gray-200">
               <h3 className="text-xl font-heading mb-4">Description</h3>
@@ -419,7 +394,6 @@ const ProductPage = () => {
         </div>
       </div>
 
-      {/* Related Products */}
       {relatedProducts.length > 0 && (
         <div className="mt-16 border-t border-gray-200 pt-12">
           <h2 className="text-2xl font-heading mb-8 text-center lg:text-left">Related Products</h2>
@@ -470,7 +444,6 @@ const ProductPage = () => {
         </div>
       )}
 
-      {/* Reviews at bottom */}
       <div className="mt-16 border-t border-gray-200 pt-12">
         <h2 className="text-2xl font-heading mb-6 flex items-center gap-3">
           Customer Reviews
@@ -561,7 +534,6 @@ const ProductPage = () => {
         )}
       </div>
 
-      {/* Size Guide Modal */}
       {showSizeGuide && (
         <div
           className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
